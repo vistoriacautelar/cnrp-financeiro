@@ -999,7 +999,7 @@ function renderClienteDetalhe(el,clId){
 // ═══════ PRODUÇÃO ═══════
 function renderProducao(){
   const el=document.getElementById('tab-producao');
-  document.getElementById('top-metrics').innerHTML=`<button class="btn-secondary" onclick="editValores()" style="margin-right:8px"><i class="fa-solid fa-dollar-sign"></i> Valores</button><button class="btn-primary" onclick="novaProducao()"><i class="fa-solid fa-plus"></i> Lançar</button>`;
+  document.getElementById('top-metrics').innerHTML=`<button class="btn-secondary" onclick="importarMedicao()" style="margin-right:8px"><i class="fa-solid fa-file-excel"></i> Importar planilha</button><button class="btn-secondary" onclick="editValores()" style="margin-right:8px"><i class="fa-solid fa-dollar-sign"></i> Valores</button><button class="btn-primary" onclick="novaProducao()"><i class="fa-solid fa-plus"></i> Lançar</button>`;
   const totalVist=DB.producao.reduce((s,p)=>s+p.quantidade,0);
   const totalValor=DB.producao.reduce((s,p)=>s+p.quantidade*(p.valorUnitario||0),0);
 
@@ -1277,6 +1277,132 @@ window.gerarRelatorioPDF=async function(){
     const cliente=window._relCl.length?window._relCl.join('_'):'Todos';
     pdf.save(`Relatorio_${cliente}_${periodo}.pdf`);
   }catch(e){console.error(e);alert('Erro ao gerar PDF.');}
+};
+
+
+// ═══════ IMPORTAR PLANILHA MEDIÇÃO ═══════
+window.importarMedicao=function(){
+  const el=document.getElementById('tab-producao');
+  const clOpts=vcClientes.length?vcClientes.map(c=>`<option value="${c.id}" data-nome="${esc(c.nome)}">${esc(c.nome)}</option>`).join(''):CLIENTES.map(c=>`<option value="${esc(c)}" data-nome="${esc(c)}">${esc(c)}</option>`).join('');
+  el.innerHTML=`<div class="fc"><h3 style="margin:0 0 12px;font-size:16px;font-weight:700"><i class="fa-solid fa-file-excel" style="color:#059669"></i> Importar planilha de medição</h3>
+  <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:16px">Selecione o cliente e o arquivo XLSX da medição. O sistema vai extrair as frentes de serviço, quantidades e valores automaticamente.</p>
+  <div class="row"><div style="flex:1"><label class="lb">Cliente</label><select class="sel" id="imp-cl"><option value="">Selecione o cliente</option>${clOpts}</select></div>
+  <div style="flex:1"><label class="lb">Tipo relatório</label><select class="sel" id="imp-tipo">${TIPOS_REL.map(t=>`<option>${t}</option>`).join('')}</select></div></div>
+  <label class="lb">Arquivo XLSX</label>
+  <div style="border:2px dashed var(--border);border-radius:8px;padding:24px;text-align:center;cursor:pointer;background:#f8fafc;transition:all .2s" onclick="document.getElementById('imp-file').click()" id="imp-drop">
+    <i class="fa-solid fa-cloud-arrow-up" style="font-size:2rem;color:var(--primary);margin-bottom:8px"></i>
+    <p style="font-size:.9rem;color:var(--text-base);font-weight:500">Clique para selecionar ou arraste o arquivo</p>
+    <p style="font-size:.8rem;color:var(--text-muted)">.xlsx</p>
+  </div>
+  <input type="file" id="imp-file" accept=".xlsx,.xls" style="display:none" onchange="previewImport(this)">
+  <div id="imp-preview" style="margin-top:16px"></div>
+  <div class="acts"><button class="btn-secondary" onclick="renderProducao()">Cancelar</button><button class="btn-primary" id="imp-btn" onclick="confirmarImport()" disabled><i class="fa-solid fa-check"></i> Importar dados</button></div></div>`;
+};
+
+window._impData=null;
+
+window.previewImport=async function(input){
+  const file=input.files[0];if(!file)return;
+  // Load SheetJS
+  if(!window.XLSX){
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    document.head.appendChild(s);
+    await new Promise(r=>{s.onload=r;setTimeout(r,5000);});
+  }
+  try{
+    const ab=await file.arrayBuffer();
+    const wb=XLSX.read(ab,{type:'array'});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+
+    // Parse structure
+    let mesRef='',periodo='',items=[];
+    for(let i=0;i<data.length;i++){
+      const row=data[i];
+      // Find PERÍODO
+      if(String(row[0]).includes('PERÍODO')){periodo=String(row[1]||'').trim();}
+      // Find MEDIÇÃO header
+      for(let j=0;j<row.length;j++){const cell=String(row[j]||'');if(cell.match(/MEDI[ÇC][ÃA]O\s+/i)){mesRef=cell.replace(/MEDI[ÇC][ÃA]O\s*/i,'').trim();}}
+      // Find data rows (numeric ITEM column + text frente + numbers)
+      const item=parseFloat(row[0]);
+      if(item>0&&!isNaN(item)&&row[1]&&String(row[1]).trim()&&String(row[0])!=='TOTAL'){
+        const frente=String(row[1]).trim();
+        const preco=parseFloat(row[2])||0;
+        const qtd=parseFloat(row[3])||0;
+        const valor=parseFloat(row[4])||0;
+        if(qtd>0)items.push({frente,preco,qtd,valor});
+      }
+      // TOTAL row
+      if(String(row[0]).toUpperCase()==='TOTAL'){
+        // Could extract totals but we compute from items
+      }
+    }
+
+    // Normalize mesRef: "JANEIRO" → "Janeiro 2026" etc
+    const mesesNomes={JANEIRO:'Janeiro',FEVEREIRO:'Fevereiro',MARÇO:'Março',MARCO:'Março',ABRIL:'Abril',MAIO:'Maio',JUNHO:'Junho',JULHO:'Julho',AGOSTO:'Agosto',SETEMBRO:'Setembro',OUTUBRO:'Outubro',NOVEMBRO:'Novembro',DEZEMBRO:'Dezembro'};
+    let mesNorm=mesRef;
+    const mesUp=mesRef.toUpperCase().replace(/[^A-ZÇ]/g,'');
+    if(mesesNomes[mesUp])mesNorm=mesesNomes[mesUp];
+    // Try to get year from período
+    const anoMatch=(periodo||'').match(/(20\d{2}|\d{2})\/?(\d{2})?$/);
+    let ano='2026';
+    if(anoMatch){ano=anoMatch[1].length===2?'20'+anoMatch[1]:anoMatch[1];}
+    if(!mesRef.match(/\d{4}/))mesNorm+=' '+ano;
+
+    const totalQtd=items.reduce((s,x)=>s+x.qtd,0);
+    const totalVal=items.reduce((s,x)=>s+x.valor,0);
+
+    window._impData={mesRef:mesNorm,items,totalQtd,totalVal};
+
+    // Show preview
+    let prev=`<div class="report-section"><h3 style="font-weight:700;margin-bottom:8px"><i class="fa-solid fa-eye"></i> Pré-visualização</h3>
+    <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:12px">Mês: <strong>${esc(mesNorm)}</strong> · ${items.length} frentes · ${totalQtd} vistorias · ${fmt(totalVal)}</p>
+    <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+    <tr style="background:#f1f5f9"><th style="padding:8px;text-align:left">#</th><th style="padding:8px;text-align:left">Frente de serviço</th><th style="padding:8px;text-align:right">Preço unit.</th><th style="padding:8px;text-align:right">Qtd</th><th style="padding:8px;text-align:right">Valor</th></tr>`;
+    items.forEach((it,i)=>{prev+=`<tr style="background:${i%2?'#f8fafc':'#fff'}"><td style="padding:6px 8px">${i+1}</td><td style="padding:6px 8px">${esc(it.frente)}</td><td style="padding:6px 8px;text-align:right">${fmt(it.preco)}</td><td style="padding:6px 8px;text-align:right;font-weight:600">${it.qtd}</td><td style="padding:6px 8px;text-align:right;font-weight:600">${fmt(it.valor)}</td></tr>`;});
+    prev+=`<tr style="background:#e2e8f0;font-weight:700"><td colspan="3" style="padding:8px">TOTAL</td><td style="padding:8px;text-align:right">${totalQtd}</td><td style="padding:8px;text-align:right">${fmt(totalVal)}</td></tr></table>`;
+    prev+=`<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:.875rem;cursor:pointer"><input type="checkbox" id="imp-fat" checked> Criar registro de faturamento (${fmt(totalVal)})</label>`;
+    prev+=`</div>`;
+    document.getElementById('imp-preview').innerHTML=prev;
+    document.getElementById('imp-btn').disabled=false;
+    document.getElementById('imp-drop').innerHTML=`<i class="fa-solid fa-check-circle" style="font-size:2rem;color:var(--success)"></i><p style="font-size:.9rem;color:var(--success);font-weight:600">${esc(file.name)}</p>`;
+  }catch(e){console.error(e);document.getElementById('imp-preview').innerHTML=`<div style="color:var(--danger);font-size:.85rem;margin-top:8px"><i class="fa-solid fa-triangle-exclamation"></i> Erro ao ler arquivo: ${esc(e.message)}</div>`;}
+};
+
+window.confirmarImport=async function(){
+  if(!window._impData)return alert('Nenhum dado para importar');
+  const clienteId=document.getElementById('imp-cl').value;
+  const clienteNome=document.getElementById('imp-cl').selectedOptions[0]?.textContent||'';
+  const tipo=document.getElementById('imp-tipo').value;
+  if(!clienteId)return alert('Selecione o cliente');
+
+  const {mesRef,items,totalQtd,totalVal}=window._impData;
+  const criarFat=document.getElementById('imp-fat')?.checked;
+
+  // Create production entries — one per frente de serviço
+  const vr=DB.valoresRelatorio.find(v=>v.clienteId===clienteId&&v.tipoRelatorio===tipo);
+  const valorUnit=vr?vr.valorUnitario:0;
+
+  items.forEach(it=>{
+    // Try to match coletor by name
+    const col=vcColetores.find(c=>c.clienteId===clienteId&&c.nome.toLowerCase()===it.frente.toLowerCase());
+    DB.producao.push({
+      id:uid(),mesRef,tipoRelatorio:tipo,clienteId,clienteNome,
+      coletorId:col?col.id:'',coletorNome:it.frente,
+      quantidade:it.qtd,valorUnitario:it.preco||valorUnit
+    });
+  });
+
+  // Create faturamento entry
+  if(criarFat){
+    DB.faturamento.push({id:uid(),cliente:clienteNome,clienteNorm:clienteNome,mesRef,valorTotal:totalVal,nf:'',envioMedicao:'',emissaoNF:'',prevPagamento:'',dataDeposito:'',status:'Pendente',obs:'',imposto:0,arquivos:[]});
+  }
+
+  await saveDB('Importação planilha',mesRef+' '+clienteNome+' '+totalQtd+' vistorias');
+  window._impData=null;
+  alert('Importação concluída! '+items.length+' frentes, '+totalQtd+' vistorias'+(criarFat?' + faturamento criado':''));
+  renderProducao();
 };
 
 // ═══════ CONFIG ═══════
