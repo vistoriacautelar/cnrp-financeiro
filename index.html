@@ -999,34 +999,77 @@ function renderClienteDetalhe(el,clId){
 // ═══════ PRODUÇÃO ═══════
 function renderProducao(){
   const el=document.getElementById('tab-producao');
-  const meses=[...new Set(DB.producao.map(p=>p.mesRef))].sort((a,b)=>mesOrder(b)-mesOrder(a));
   document.getElementById('top-metrics').innerHTML=`<button class="btn-secondary" onclick="editValores()" style="margin-right:8px"><i class="fa-solid fa-dollar-sign"></i> Valores</button><button class="btn-primary" onclick="novaProducao()"><i class="fa-solid fa-plus"></i> Lançar</button>`;
   const totalVist=DB.producao.reduce((s,p)=>s+p.quantidade,0);
   const totalValor=DB.producao.reduce((s,p)=>s+p.quantidade*(p.valorUnitario||0),0);
+
   let h=`<div class="summary-cards-row" style="grid-template-columns:1fr 1fr;margin-bottom:24px"><div class="summary-card blue"><h3>Total vistorias</h3><div class="value">${totalVist}</div></div><div class="summary-card green"><h3>Valor produzido</h3><div class="value">${fmt(totalValor)}</div></div></div>`;
-  if(meses.length){meses.forEach(mes=>{
-    const prods=DB.producao.filter(p=>p.mesRef===mes);const totMes=prods.reduce((s,p)=>s+p.quantidade,0);
-    const valMes=prods.reduce((s,p)=>s+p.quantidade*(p.valorUnitario||0),0);
-    h+=`<div class="report-section"><div style="display:flex;justify-content:space-between;margin-bottom:16px"><h3 style="font-weight:700">${esc(mes)}</h3><div style="text-align:right"><strong>${totMes} vistorias</strong><div style="color:var(--success);font-weight:600">${fmt(valMes)}</div></div></div>`;
-    const porCl={};prods.forEach(p=>{const k=p.clienteNome||p.clienteId;if(!porCl[k])porCl[k]=[];porCl[k].push(p);});
-    Object.entries(porCl).forEach(([cl,items])=>{h+=`<div style="margin-bottom:8px"><div style="font-size:.875rem;font-weight:600;color:var(--primary);margin-bottom:4px">${esc(cl)}</div>`;
-      items.forEach(p=>{const val=p.valorUnitario||0;h+=`<div class="prev-item"><span>${esc(p.coletorNome||'—')} · <span style="color:#7c3aed">${esc(p.tipoRelatorio)}</span></span><span class="val">${p.quantidade}x${val?` · ${fmt(p.quantidade*val)}`:''}<i class="fa-solid fa-trash btn-icon-danger" onclick="delProducao('${p.id}')"></i></span></div>`;});
-      h+=`</div>`;});
-    h+=`</div>`;});
-  }else{h+=`<div class="empty-state"><i class="fa-solid fa-file-invoice"></i><p>Nenhum registro. Clique em "+ Lançar" para começar.</p></div>`;}
+
+  // Group by client
+  const porCliente={};
+  DB.producao.forEach(p=>{const k=p.clienteNome||p.clienteId;if(!porCliente[k])porCliente[k]=[];porCliente[k].push(p);});
+  const clKeys=Object.keys(porCliente).sort();
+
+  if(clKeys.length){
+    clKeys.forEach(cl=>{
+      const prods=porCliente[cl].sort((a,b)=>mesOrder(b.mesRef)-mesOrder(a.mesRef));
+      const totCl=prods.reduce((s,p)=>s+p.quantidade,0);
+      const valCl=prods.reduce((s,p)=>s+p.quantidade*(p.valorUnitario||0),0);
+      const initials=cl.replace(/Consórcio\s*/i,'').slice(0,2).toUpperCase();
+
+      // Group by month within client
+      const porMes={};
+      prods.forEach(p=>{if(!porMes[p.mesRef])porMes[p.mesRef]=[];porMes[p.mesRef].push(p);});
+
+      h+=`<details class="client-group">
+      <summary class="client-header">
+        <div class="client-info"><div class="client-avatar">${initials}</div>
+        <div><div class="client-name">${esc(cl)}</div><div class="client-sub">${totCl} vistorias · ${fmt(valCl)}</div></div></div>
+        <div class="client-stats">
+          <div class="stat-badge pago"><i class="fa-solid fa-chart-bar"></i> ${totCl} vistorias</div>
+          <div class="stat-badge" style="background:#eff6ff;color:var(--primary)">${fmt(valCl)}</div>
+          <i class="fa-solid fa-chevron-down chevron"></i>
+        </div>
+      </summary>
+      <div class="client-content">`;
+
+      Object.entries(porMes).forEach(([mes,items])=>{
+        const totMes=items.reduce((s,p)=>s+p.quantidade,0);
+        const valMes=items.reduce((s,p)=>s+p.quantidade*(p.valorUnitario||0),0);
+        h+=`<div style="margin-bottom:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)"><strong style="font-size:.95rem">${esc(mes)}</strong><span style="font-size:.85rem;color:var(--success);font-weight:600">${totMes}x · ${fmt(valMes)}</span></div>`;
+        items.forEach(p=>{
+          const val=p.valorUnitario||0;
+          h+=`<div class="prev-item"><span><i class="fa-solid fa-location-dot" style="color:var(--text-muted);margin-right:4px"></i>${esc(p.coletorNome||'Geral')} · <span style="color:#7c3aed;font-weight:500">${esc(p.tipoRelatorio)}</span></span>
+          <span class="val">${p.quantidade}x${val?` · ${fmt(p.quantidade*val)}`:''}<button class="btn-icon edit" style="margin-left:4px" onclick="editProducao('${p.id}')"><i class="fa-solid fa-pen"></i></button><i class="fa-solid fa-trash btn-icon-danger" style="margin-left:4px" onclick="delProducao('${p.id}')"></i></span></div>`;
+        });
+        h+=`</div>`;
+      });
+
+      h+=`</div></details>`;
+    });
+  }else{
+    h+=`<div class="empty-state"><i class="fa-solid fa-file-invoice"></i><p>Nenhum registro. Clique em "+ Lançar" para começar.</p></div>`;
+  }
   el.innerHTML=h;
 }
 
-window.novaProducao=function(){
+window._editProdId='';
+function prodForm(p){
   const el=document.getElementById('tab-producao');
-  const clOpts=vcClientes.length?vcClientes.map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join(''):CLIENTES.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
-  el.innerHTML=`<div class="fc"><h3 style="margin:0 0 12px;font-size:16px;font-weight:700">Lançar produção</h3>
-  <div class="row"><div style="flex:1"><label class="lb">Mês/Ano</label><input class="inp" id="pd-mes" placeholder="Julho 2026"></div><div style="flex:1"><label class="lb">Tipo relatório</label><select class="sel" id="pd-tipo">${TIPOS_REL.map(t=>`<option>${t}</option>`).join('')}</select></div></div>
+  const isEdit=!!p;
+  window._editProdId=isEdit?p.id:'';
+  const clOpts=vcClientes.length?vcClientes.map(c=>`<option value="${c.id}"${isEdit&&p.clienteId===c.id?' selected':''}>${esc(c.nome)}</option>`).join(''):CLIENTES.map(c=>`<option value="${esc(c)}"${isEdit&&p.clienteId===c?' selected':''}>${esc(c)}</option>`).join('');
+  el.innerHTML=`<div class="fc"><h3 style="margin:0 0 12px;font-size:16px;font-weight:700">${isEdit?'Editar':'Lançar'} produção</h3>
+  <div class="row"><div style="flex:1"><label class="lb">Mês/Ano</label><input class="inp" id="pd-mes" placeholder="Julho 2026" value="${isEdit?esc(p.mesRef):''}"></div><div style="flex:1"><label class="lb">Tipo relatório</label><select class="sel" id="pd-tipo">${TIPOS_REL.map(t=>`<option${isEdit&&p.tipoRelatorio===t?' selected':''}>${t}</option>`).join('')}</select></div></div>
   <div class="row"><div style="flex:1"><label class="lb">Cliente</label><select class="sel" id="pd-cl" onchange="updPdCol()"><option value="">Selecione</option>${clOpts}</select></div>
-  <div style="flex:1"><label class="lb">Coletor</label><select class="sel" id="pd-col" disabled><option value="">—</option></select></div></div>
-  <div class="row"><div style="flex:1"><label class="lb">Quantidade de vistorias</label><input class="inp" type="number" id="pd-qt" min="1" value="1"></div></div>
-  <div class="acts"><button class="btn-secondary" onclick="renderProducao()">Cancelar</button><button class="btn-primary" onclick="salvarProducao()">Salvar</button></div></div>`;
-};
+  <div style="flex:1"><label class="lb">Coletor</label><select class="sel" id="pd-col"><option value="">Todos / Geral</option></select></div></div>
+  <div class="row"><div style="flex:1"><label class="lb">Quantidade de vistorias</label><input class="inp" type="number" id="pd-qt" min="1" value="${isEdit?p.quantidade:1}"></div></div>
+  <div class="acts">${isEdit?`<button class="btn-danger" onclick="delProducao('${p.id}')" style="margin-right:auto"><i class="fa-solid fa-trash"></i> Excluir</button>`:''}<button class="btn-secondary" onclick="renderProducao()">Cancelar</button><button class="btn-primary" onclick="salvarProducao()"><i class="fa-solid fa-check"></i> ${isEdit?'Atualizar':'Salvar'}</button></div></div>`;
+  // Pre-fill coletor if editing
+  if(isEdit&&p.clienteId){updPdCol();setTimeout(()=>{const sel=document.getElementById('pd-col');if(sel&&p.coletorId){for(let i=0;i<sel.options.length;i++){if(sel.options[i].value===p.coletorId){sel.selectedIndex=i;break;}}}},100);}
+}
+window.novaProducao=function(){prodForm(null);};
+window.editProducao=function(id){const p=DB.producao.find(x=>x.id===id);if(p)prodForm(p);};
 
 window.updPdCol=function(){
   const clId=document.getElementById('pd-cl').value;
@@ -1049,8 +1092,15 @@ window.salvarProducao=async function(){
   if(!mesRef||!clienteId||qt<=0)return alert('Preencha mês, cliente e quantidade');
   const vr=DB.valoresRelatorio.find(v=>v.clienteId===clienteId&&v.tipoRelatorio===tipo);
   const valorUnit=vr?vr.valorUnitario:0;
-  DB.producao.push({id:uid(),mesRef,tipoRelatorio:tipo,clienteId,clienteNome,coletorId,coletorNome:coletorId?coletorNome:'Geral',quantidade:qt,valorUnitario:valorUnit});
-  await saveDB('Produção lançada',mesRef+' '+clienteNome+' '+qt+'x');renderProducao();
+  const data={mesRef,tipoRelatorio:tipo,clienteId,clienteNome,coletorId,coletorNome:coletorId?coletorNome:'Geral',quantidade:qt,valorUnitario:valorUnit};
+  if(window._editProdId){
+    DB.producao=DB.producao.map(p=>p.id===window._editProdId?{...p,...data}:p);
+    await saveDB('Produção editada',mesRef+' '+clienteNome+' '+qt+'x');
+  }else{
+    DB.producao.push({id:uid(),...data});
+    await saveDB('Produção lançada',mesRef+' '+clienteNome+' '+qt+'x');
+  }
+  window._editProdId='';renderProducao();
 };
 
 window.delProducao=async function(id){if(confirm('Excluir?')){DB.producao=DB.producao.filter(x=>x.id!==id);await saveDB();}};
@@ -1099,60 +1149,81 @@ window.salvarValores=async function(clId,clNome){
 window.relPeriodo='';window.relCliente='';
 function renderRelatorio(){
   const el=document.getElementById('tab-relatorio');
-  const clientes=[...new Set(DB.faturamento.map(f=>normCl(f.clienteNorm||f.cliente)))].sort();
-  const meses=[...new Set(DB.faturamento.map(f=>f.mesRef).filter(Boolean))].sort((a,b)=>mesOrder(b)-mesOrder(a));
-  document.getElementById('top-metrics').innerHTML=`<button class="btn-primary" onclick="gerarRelatorioPDF()"><i class="fa-solid fa-file-pdf"></i> Gerar relatório</button>`;
+  const allClientes=[...new Set(DB.faturamento.map(f=>normCl(f.clienteNorm||f.cliente)))].sort();
+  const allMeses=[...new Set(DB.faturamento.map(f=>f.mesRef).filter(Boolean))].sort((a,b)=>mesOrder(b)-mesOrder(a));
+  
+  // Init multi-select state
+  if(!window._relCl)window._relCl=[];
+  if(!window._relMes)window._relMes=[];
+  document.getElementById('top-metrics').innerHTML=`<button class="btn-primary" onclick="gerarRelatorioPDF()"><i class="fa-solid fa-file-pdf"></i> Gerar PDF</button>`;
 
-  const filteredFat=DB.faturamento.filter(f=>{if(window.relCliente&&normCl(f.clienteNorm||f.cliente)!==window.relCliente)return false;if(window.relPeriodo&&f.mesRef!==window.relPeriodo)return false;return true;});
+  // Filter
+  const filteredFat=DB.faturamento.filter(f=>{
+    const cl=normCl(f.clienteNorm||f.cliente);
+    if(window._relCl.length&&!window._relCl.includes(cl))return false;
+    if(window._relMes.length&&!window._relMes.includes(f.mesRef))return false;
+    return true;
+  });
   const filteredMedIds=new Set();filteredFat.forEach(f=>{const cl=f.clienteNorm||f.cliente;const med=DB.medicoes.find(m=>m.consorcio===cl&&f.mesRef&&f.mesRef.includes(m.mesRef));if(med)filteredMedIds.add(med.id);});
   const filteredSaidas=DB.saidas.filter(s=>!filteredMedIds.size||filteredMedIds.has(s.medicaoId));
-  const totMedido=filteredFat.reduce((s,f)=>s+f.valorTotal,0);const totRecebido=filteredFat.filter(f=>f.status==='Pago').reduce((s,f)=>s+f.valorTotal,0);
-  const totPendente=filteredFat.filter(f=>f.status!=='Pago').reduce((s,f)=>s+f.valorTotal,0);const totGastos=filteredSaidas.reduce((s,sd)=>s+getTot(sd),0);
+  const totMedido=filteredFat.reduce((s,f)=>s+f.valorTotal,0);
+  const totRecebido=filteredFat.filter(f=>f.status==='Pago').reduce((s,f)=>s+f.valorTotal,0);
+  const totPendente=filteredFat.filter(f=>f.status!=='Pago').reduce((s,f)=>s+f.valorTotal,0);
+  const totGastos=filteredSaidas.reduce((s,sd)=>s+getTot(sd),0);
   const porCliente={};filteredFat.forEach(f=>{const cl=normCl(f.clienteNorm||f.cliente);if(!porCliente[cl])porCliente[cl]={medido:0,visitas:0,gastos:0};porCliente[cl].medido+=f.valorTotal;});
   filteredSaidas.forEach(sd=>{const med=DB.medicoes.find(m=>m.id===sd.medicaoId);if(med){const cl=normCl(med.consorcio);if(!porCliente[cl])porCliente[cl]={medido:0,visitas:0,gastos:0};porCliente[cl].visitas++;porCliente[cl].gastos+=getTot(sd);}});
-
-  // Produção data for filtered client/period
-  const filteredProd=DB.producao.filter(p=>{if(window.relCliente&&normCl(p.clienteNome)!==window.relCliente)return false;if(window.relPeriodo&&p.mesRef!==window.relPeriodo)return false;return true;});
+  const filteredProd=DB.producao.filter(p=>{if(window._relCl.length&&!window._relCl.includes(normCl(p.clienteNome)))return false;if(window._relMes.length&&!window._relMes.includes(p.mesRef))return false;return true;});
   const prodByTipo={};filteredProd.forEach(p=>{if(!prodByTipo[p.tipoRelatorio])prodByTipo[p.tipoRelatorio]=0;prodByTipo[p.tipoRelatorio]+=p.quantidade;});
   const totalVistorias=filteredProd.reduce((s,p)=>s+p.quantidade,0);
 
-  let h=`<div class="filters-row"><select class="filter-input" style="flex:1" onchange="window.relCliente=this.value;renderRelatorio()"><option value="">Todos os clientes</option>${clientes.map(c=>`<option value="${esc(c)}"${window.relCliente===c?' selected':''}>${esc(c)}</option>`).join('')}</select>
-  <select class="filter-input" style="flex:1" onchange="window.relPeriodo=this.value;renderRelatorio()"><option value="">Todos os períodos</option>${meses.map(m=>`<option value="${esc(m)}"${window.relPeriodo===m?' selected':''}>${esc(m)}</option>`).join('')}</select></div>`;
-
-  // Checkboxes for report items
-  h+=`<div class="report-section" style="margin-bottom:16px"><h3 style="font-weight:700;margin-bottom:12px"><i class="fa-solid fa-sliders"></i> Itens do relatório</h3>
-  <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:.875rem">
-  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" class="rel-chk" data-section="cards" checked> Resumo financeiro</label>
-  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" class="rel-chk" data-section="producao" checked> Produção / Vistorias</label>
-  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" class="rel-chk" data-section="chart" checked> Gráfico por cliente</label>
-  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" class="rel-chk" data-section="gastos" checked> Custos / Gastos</label>
-  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" class="rel-chk" data-section="table" checked> Detalhamento</label>
+  // Filter UI — multi-select checkboxes
+  const clLabel=window._relCl.length?`${window._relCl.length} selecionado(s)`:'Todos os clientes';
+  const mesLabel=window._relMes.length?`${window._relMes.length} selecionado(s)`:'Todos os períodos';
+  let h=`<div style="display:flex;gap:16px;margin-bottom:20px">
+  <div style="flex:1;position:relative">
+    <button class="filter-input" style="width:100%;text-align:left;cursor:pointer;display:flex;justify-content:space-between;align-items:center" onclick="document.getElementById('dd-cl').style.display=document.getElementById('dd-cl').style.display==='none'?'block':'none'">${clLabel} <i class="fa-solid fa-chevron-down" style="font-size:.7rem"></i></button>
+    <div id="dd-cl" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow-md);z-index:20;max-height:250px;overflow-y:auto;padding:8px">
+    <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;font-size:.875rem;cursor:pointer;border-bottom:1px solid var(--border);margin-bottom:4px;font-weight:600"><input type="checkbox" onchange="window._relCl=[];document.querySelectorAll('.chk-cl').forEach(x=>x.checked=false);renderRelatorio()"> Todos</label>
+    ${allClientes.map(c=>`<label style="display:flex;align-items:center;gap:8px;padding:4px 8px;font-size:.875rem;cursor:pointer"><input type="checkbox" class="chk-cl" value="${esc(c)}"${window._relCl.includes(c)?' checked':''} onchange="updRelCl()"> ${esc(c)}</label>`).join('')}
+    </div>
+  </div>
+  <div style="flex:1;position:relative">
+    <button class="filter-input" style="width:100%;text-align:left;cursor:pointer;display:flex;justify-content:space-between;align-items:center" onclick="document.getElementById('dd-mes').style.display=document.getElementById('dd-mes').style.display==='none'?'block':'none'">${mesLabel} <i class="fa-solid fa-chevron-down" style="font-size:.7rem"></i></button>
+    <div id="dd-mes" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow-md);z-index:20;max-height:250px;overflow-y:auto;padding:8px">
+    <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;font-size:.875rem;cursor:pointer;border-bottom:1px solid var(--border);margin-bottom:4px;font-weight:600"><input type="checkbox" onchange="window._relMes=[];document.querySelectorAll('.chk-mes').forEach(x=>x.checked=false);renderRelatorio()"> Todos</label>
+    ${allMeses.map(m=>`<label style="display:flex;align-items:center;gap:8px;padding:4px 8px;font-size:.875rem;cursor:pointer"><input type="checkbox" class="chk-mes" value="${esc(m)}"${window._relMes.includes(m)?' checked':''} onchange="updRelMes()"> ${esc(m)}</label>`).join('')}
+    </div>
   </div></div>`;
 
-  // Summary cards
+  // Report sections checkboxes
+  h+=`<div class="report-section" style="margin-bottom:16px" id="rel-options"><h3 style="font-weight:700;margin-bottom:12px"><i class="fa-solid fa-sliders"></i> Seções do relatório</h3>
+  <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:.875rem">
+  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" class="rel-chk" data-section="cards" checked onchange="toggleRelSec(this)"> Resumo financeiro</label>
+  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" class="rel-chk" data-section="producao" checked onchange="toggleRelSec(this)"> Produção</label>
+  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" class="rel-chk" data-section="chart" checked onchange="toggleRelSec(this)"> Gráfico</label>
+  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" class="rel-chk" data-section="gastos" checked onchange="toggleRelSec(this)"> Custos</label>
+  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" class="rel-chk" data-section="table" checked onchange="toggleRelSec(this)"> Detalhamento</label>
+  </div></div>`;
+
+  // Cards
   h+=`<div id="rel-cards" class="summary-cards-row" style="margin-bottom:24px;grid-template-columns:repeat(4,1fr)"><div class="summary-card blue"><h3>Total faturado</h3><div class="value">${fmt(totMedido)}</div></div><div class="summary-card green"><h3>Recebido</h3><div class="value">${fmt(totRecebido)}</div></div><div class="summary-card orange"><h3>Pendente</h3><div class="value">${fmt(totPendente)}</div></div><div class="summary-card" style="border-left:4px solid #8b5cf6"><h3>Vistorias</h3><div class="value" style="color:#7c3aed">${totalVistorias}</div></div></div>`;
 
-  // Produção por tipo
-  h+=`<div id="rel-producao" class="report-section" style="margin-bottom:16px"><h3 style="font-weight:700;margin-bottom:12px"><i class="fa-solid fa-chart-bar"></i> Produção por tipo de relatório</h3>`;
-  if(Object.keys(prodByTipo).length){
-    h+=`<div style="display:flex;gap:16px;flex-wrap:wrap">`;
-    Object.entries(prodByTipo).forEach(([tipo,qt])=>{h+=`<div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:12px 20px;text-align:center"><div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;font-weight:600">${esc(tipo)}</div><div style="font-size:1.5rem;font-weight:700;color:var(--primary)">${qt}</div></div>`;});
-    h+=`</div>`;
-  }else{h+=`<p style="color:var(--text-muted);font-size:.875rem">Nenhum dado de produção no filtro selecionado.</p>`;}
-  h+=`</div>`;
+  // Produção
+  h+=`<div id="rel-producao" class="report-section" style="margin-bottom:16px"><h3 style="font-weight:700;margin-bottom:12px"><i class="fa-solid fa-chart-bar"></i> Produção por tipo</h3>`;
+  if(Object.keys(prodByTipo).length){h+=`<div style="display:flex;gap:16px;flex-wrap:wrap">`;Object.entries(prodByTipo).forEach(([tipo,qt])=>{h+=`<div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:12px 20px;text-align:center"><div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;font-weight:600">${esc(tipo)}</div><div style="font-size:1.5rem;font-weight:700;color:var(--primary)">${qt}</div></div>`;});h+=`</div>`;}
+  else{h+=`<p style="color:var(--text-muted);font-size:.875rem">Sem dados de produção.</p>`;}h+=`</div>`;
 
-  // Charts
+  // Chart
   const clKeys=Object.keys(porCliente).filter(k=>porCliente[k].medido>0).sort((a,b)=>porCliente[b].medido-porCliente[a].medido);
   h+=`<div id="rel-chart">`;
   if(clKeys.length){const maxVal=Math.max(...clKeys.map(k=>porCliente[k].medido),1);
     h+=`<div class="report-section"><h3 style="font-weight:700;margin-bottom:16px"><i class="fa-solid fa-chart-bar"></i> Faturado por cliente</h3>`;
     clKeys.forEach(k=>{const d=porCliente[k];const pct=Math.round(d.medido/maxVal*100);
       h+=`<div class="bar-chart-row"><div class="bar-chart-labels"><span>${esc(k)}</span><span>${fmt(d.medido)}</span></div><div class="bar-track"><div class="bar-fill blue" style="width:${pct}%"></div></div><div class="bar-sub">${d.visitas} visitas · Gastos: ${fmt(d.gastos)}</div></div>`;});
-    h+=`</div>`;}
-  h+=`</div>`;
+    h+=`</div>`;}h+=`</div>`;
 
   // Gastos
-  h+=`<div id="rel-gastos" class="report-section" style="margin-bottom:16px"><h3 style="font-weight:700;margin-bottom:12px"><i class="fa-solid fa-money-bill-transfer"></i> Custos / Gastos</h3>
+  h+=`<div id="rel-gastos" class="report-section" style="margin-bottom:16px"><h3 style="font-weight:700;margin-bottom:12px"><i class="fa-solid fa-money-bill-transfer"></i> Custos</h3>
   <div style="display:flex;gap:24px;flex-wrap:wrap">
   <div style="text-align:center"><div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;font-weight:600">Total gastos</div><div style="font-size:1.5rem;font-weight:700;color:var(--danger)">${fmt(totGastos)}</div></div>
   <div style="text-align:center"><div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;font-weight:600">Visitas de campo</div><div style="font-size:1.5rem;font-weight:700">${filteredSaidas.length}</div></div>
@@ -1165,43 +1236,48 @@ function renderRelatorio(){
       h+=`<tr style="background:${i%2?'#f8fafc':'#fff'}"><td style="padding:8px 10px">${esc(cl)}</td><td style="padding:8px 10px">${esc(f.mesRef)}</td><td style="padding:8px 10px;text-align:right;font-weight:600">${fmt(f.valorTotal)}</td><td style="padding:8px 10px;text-align:right">${ns}</td><td style="padding:8px 10px;text-align:center"><span class="status-tag ${f.status==='Pago'?'pago':'pend'}">${f.status}</span></td></tr>`;});
     h+=`</table></div>`;}
   el.innerHTML=h;
-
-  // Attach checkbox listeners
-  document.querySelectorAll('.rel-chk').forEach(chk=>{chk.addEventListener('change',()=>{
-    const sec=chk.dataset.section;const target=document.getElementById('rel-'+sec);
-    if(target)target.style.display=chk.checked?'':'none';
-  });});
+  // Close dropdowns on outside click
+  document.addEventListener('click',function _clk(e){if(!e.target.closest('#dd-cl')&&!e.target.closest('[onclick*="dd-cl"]')){const d=document.getElementById('dd-cl');if(d)d.style.display='none';}if(!e.target.closest('#dd-mes')&&!e.target.closest('[onclick*="dd-mes"]')){const d=document.getElementById('dd-mes');if(d)d.style.display='none';}},{once:true});
 }
 
-window.gerarRelatorioPDF=function(){
-  const content=document.getElementById('tab-relatorio');
-  if(!content)return;
-  // Use html2canvas to capture then convert to PDF
-  if(!window.html2canvas){
-    const s=document.createElement('script');
-    s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-    document.head.appendChild(s);
-    s.onload=()=>_doExportPDF();
-    return;
-  }
-  _doExportPDF();
-};
 
-async function _doExportPDF(){
+
+
+
+
+window.updRelCl=function(){window._relCl=[...document.querySelectorAll('.chk-cl:checked')].map(x=>x.value);renderRelatorio();};
+window.updRelMes=function(){window._relMes=[...document.querySelectorAll('.chk-mes:checked')].map(x=>x.value);renderRelatorio();};
+window.toggleRelSec=function(chk){const sec=chk.dataset.section;const target=document.getElementById('rel-'+sec);if(target)target.style.display=chk.checked?'':'none';};
+
+window.gerarRelatorioPDF=async function(){
+  // Load jsPDF + html2canvas
+  const loadScript=(url)=>new Promise((res,rej)=>{if(document.querySelector(`script[src="${url}"]`))return res();const s=document.createElement('script');s.src=url;s.onload=res;s.onerror=rej;document.head.appendChild(s);});
   try{
-    // Hide unchecked sections and checkboxes temporarily
-    const checkboxSection=document.querySelector('[data-section="cards"]')?.closest('.report-section');
-    if(checkboxSection)checkboxSection.style.display='none';
-    const canvas=await html2canvas(document.getElementById('tab-relatorio'),{backgroundColor:'#ffffff',scale:2,useCORS:true});
-    if(checkboxSection)checkboxSection.style.display='';
-    const imgData=canvas.toDataURL('image/png');
-    // Create simple PDF-like download (PNG for now)
-    const link=document.createElement('a');
-    const periodo=window.relPeriodo||'Geral';const cliente=window.relCliente||'Todos';
-    link.download=`Relatorio_${cliente.replace(/\s+/g,'_')}_${periodo.replace(/\s+/g,'_')}.png`;
-    link.href=imgData;link.click();
-  }catch(e){console.error(e);alert('Erro ao gerar. Tente novamente.');}
-}
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+  }catch(e){alert('Erro ao carregar bibliotecas.');return;}
+  try{
+    // Hide options panel
+    const opts=document.getElementById('rel-options');if(opts)opts.style.display='none';
+    const tabEl=document.getElementById('tab-relatorio');
+    const canvas=await html2canvas(tabEl,{backgroundColor:'#ffffff',scale:2,useCORS:true,scrollY:-window.scrollY});
+    if(opts)opts.style.display='';
+    const imgData=canvas.toDataURL('image/jpeg',0.95);
+    const pdf=new jspdf.jsPDF({orientation:canvas.width>canvas.height?'l':'p',unit:'mm',format:'a4'});
+    const pageW=pdf.internal.pageSize.getWidth();const pageH=pdf.internal.pageSize.getHeight();
+    const imgW=pageW-20;const imgH=(canvas.height*imgW)/canvas.width;
+    let yOff=10;let remaining=imgH;
+    // Multi-page if needed
+    while(remaining>0){
+      pdf.addImage(imgData,'JPEG',10,yOff,imgW,imgH);
+      remaining-=(pageH-20);
+      if(remaining>0){pdf.addPage();yOff=-(imgH-remaining-10);}
+    }
+    const periodo=window._relMes.length?window._relMes.join('_'):'Todos';
+    const cliente=window._relCl.length?window._relCl.join('_'):'Todos';
+    pdf.save(`Relatorio_${cliente}_${periodo}.pdf`);
+  }catch(e){console.error(e);alert('Erro ao gerar PDF.');}
+};
 
 // ═══════ CONFIG ═══════
 function renderConfig(){
