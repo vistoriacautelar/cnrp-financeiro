@@ -216,7 +216,7 @@ const parseBRL=s=>{if(!s)return 0;return parseFloat(String(s).replace(/\./g,'').
 const calcComb=(km,kml,vl)=>(km&&kml&&vl&&kml>0)?(km/kml)*vl:0;
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const pad=n=>String(n).padStart(2,'0');
-function getPeriodos(start,end){const ps=[];let d=new Date(start);const e=new Date(end);while(d<=e){const n=new Date(d);n.setMonth(n.getMonth()+1);ps.push({inicio:d.toISOString().slice(0,10),label:pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear()+' → '+pad(n.getDate())+'/'+pad(n.getMonth()+1)+'/'+n.getFullYear()});d=n;}return ps;}
+function getPeriodos(start,end){const ps=[];let d=new Date(start+'T12:00:00');const e=new Date(end+'T12:00:00');while(d<=e){const n=new Date(d);n.setMonth(n.getMonth()+1);ps.push({inicio:d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()),label:pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear()+' → '+pad(n.getDate())+'/'+pad(n.getMonth()+1)+'/'+n.getFullYear()});d=n;}return ps;}
 function getTot(sd){const v=DB.veiculos.find(x=>x.id===sd.veiculoId);return(v?calcComb(sd.km,v.kml,sd.valorLitro):(sd.combManual||0))+(sd.pedagio||0)+(sd.refeicao||0)+(sd.outros||0);}
 
 // ═══════ TABS ═══════
@@ -235,7 +235,7 @@ function render(){renderNav();({painel:renderPainel,fat:renderFat,saidas:renderS
 function renderPainel(){
   const el=document.getElementById('tab-painel');const alertas=[];
   DB.obrigacoes.filter(o=>o.ativo).forEach(ob=>{getPeriodos(ob.dataInicio,'2026-07-31').forEach(p=>{if(!DB.provisoes.some(pv=>pv.obrigacaoId===ob.id&&pv.periodoInicio===p.inicio))alertas.push({tipo:'p',nome:ob.nome,valor:ob.valor,periodo:p.label,pi:p.inicio,obId:ob.id});});
-    const ns=new Date('2026-07-31');ns.setDate(new Date(ob.dataInicio).getDate());if(ns<=new Date('2026-07-31'))ns.setMonth(ns.getMonth()+1);const ne=new Date(ns);ne.setMonth(ne.getMonth()+1);
+    const ns=new Date('2026-07-31T12:00:00');ns.setDate(new Date(ob.dataInicio+'T12:00:00').getDate());if(ns<=new Date('2026-07-31T12:00:00'))ns.setMonth(ns.getMonth()+1);const ne=new Date(ns);ne.setMonth(ne.getMonth()+1);
     const nl=pad(ns.getDate())+'/'+pad(ns.getMonth()+1)+'/'+ns.getFullYear()+' → '+pad(ne.getDate())+'/'+pad(ne.getMonth()+1)+'/'+ne.getFullYear();
     if(!DB.provisoes.some(pv=>pv.obrigacaoId===ob.id&&pv.periodoInicio===ns.toISOString().slice(0,10)))alertas.push({tipo:'n',nome:ob.nome,valor:ob.valor,periodo:nl,pi:ns.toISOString().slice(0,10),obId:ob.id});
   });
