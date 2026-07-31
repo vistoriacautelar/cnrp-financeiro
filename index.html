@@ -380,109 +380,96 @@ window.provM=async function(obId,pi,per,val){DB.provisoes.push({id:uid(),obrigac
 // ═══════ FATURAMENTO ═══════
 window.fatCliente='';
 function sortFat(arr){return[...arr].sort((a,b)=>mesOrder(b.mesRef)-mesOrder(a.mesRef));}
-function renderFatCard(f,h_arr){
+function renderFatCard(f){
     const isPago=f.status==='Pago';
     const arqs=f.arquivos||[];
-    const cl=normCl(f.clienteNorm||f.cliente);
-    const med=DB.medicoes.find(m=>normCl(m.consorcio)===cl&&f.mesRef&&f.mesRef.includes(m.mesRef));
-    const ss=med?DB.saidas.filter(s=>s.medicaoId===med.id).sort((a,b)=>(a.data||'').localeCompare(b.data||'')):[];
-    let totComb=0,totPed=0,totRef=0,totDesp=0;
-    ss.forEach(sd=>{const v=DB.veiculos.find(x=>x.id===sd.veiculoId);const c=v?calcComb(sd.km,v.kml,sd.valorLitro):(sd.combManual||0);totComb+=c;totPed+=(sd.pedagio||0);totRef+=(sd.refeicao||0);totDesp+=c+(sd.pedagio||0)+(sd.refeicao||0)+(sd.outros||0);});
-    const imposto=f.imposto||0;
-    const ajuda=DB.ajudaCustoVeiculo||0;
-    const provs=DB.provisoes.filter(p=>{const ob=DB.obrigacoes.find(o=>o.id===p.obrigacaoId);return ob&&(p.ref||'').toLowerCase().includes((f.clienteNorm||f.cliente||'').toLowerCase().slice(0,4));});
-    const totProvReal=provs.reduce((s,p)=>s+(p.valorReal!=null?p.valorReal:p.valor),0);
-    const totalDespFull=totDesp+imposto+totProvReal+ajuda;
-    const valorPag=f.valorTotal-imposto;
-    const liq=valorPag-totDesp-totProvReal-ajuda;
-    const metade=liq/2;
-    const tatRec=metade+totDesp+ajuda+totProvReal;
-    const ronRec=metade-ajuda;
-    const fv=v=>(v==null||isNaN(v))?'0,00':v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+    let h=`<div class="fat-card ${isPago?'st-pago':'st-pend'}">
+      <div class="card-header">
+        <div><h4 style="font-size:1rem;color:var(--text-dark);margin-bottom:2px">${esc(f.mesRef)}</h4>
+        <span style="font-size:.8rem;color:var(--text-muted)">${f.nf?`NF: ${esc(f.nf)}`:'Sem NF'}</span></div>
+        <div style="text-align:right"><div style="font-size:1.1rem;font-weight:700">${fmt(f.valorTotal)}</div>
+        <span class="status-tag ${isPago?'pago':'pend'}">${f.status}</span></div>
+      </div>`;
 
-    let h=`<div class="lc" style="border-left:3px solid ${isPago?'#10b981':'#f59e0b'}">
-      <div class="lh" style="cursor:pointer" onclick="toggleDetail('${f.id}')"><div><span class="tg" style="background:#dbeafe;color:#1d4ed8">${esc(cl)}</span><span style="font-size:13px;font-weight:600">${esc(f.mesRef)}</span></div>
-      <div style="display:flex;gap:4px;align-items:center"><strong style="font-size:14px">${fmt(f.valorTotal)}</strong><span class="${isPago?'status-pago':'status-pend'}">${esc(f.status)}</span>
-      <button class="sm" onclick="event.stopPropagation();toggleFat('${f.id}')">${isPago?'↩️':'✅'}</button><button class="sm" onclick="event.stopPropagation();editFat('${f.id}')">✏️</button><button class="sm" onclick="event.stopPropagation();gerarResumo('${f.id}')">📄</button></div></div>
-      <div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:4px;font-size:12px;color:#64748b">
-        ${f.nf?`<span>NF: <strong>${esc(f.nf)}</strong></span>`:''}
-        ${f.envioMedicao&&f.envioMedicao!=='NaT'?`<span>📤 Envio: ${fmtD(f.envioMedicao)}</span>`:''}
-        ${f.emissaoNF&&f.emissaoNF!=='NaT'?`<span>Emissão: ${fmtD(f.emissaoNF)}</span>`:''}
-        ${f.prevPagamento&&f.prevPagamento!=='NaT'?`<span>Prev: ${fmtD(f.prevPagamento)}</span>`:''}
-        ${f.dataDeposito&&f.dataDeposito!=='NaT'?`<span>Depósito: ${fmtD(f.dataDeposito)}</span>`:''}
-      </div>
-      ${f.obs?`<div style="font-size:11px;color:#b45309;margin-top:2px">⚠️ ${esc(f.obs)}</div>`:''}`;
-
-    // Detail panel
-    h+=`<div id="det-${f.id}" style="display:none;margin-top:8px;border-top:1px solid #e2e8f0;padding-top:8px">`;
-    if(ss.length){
-      h+=`<div style="font-size:12px;font-weight:700;color:#334155;margin-bottom:4px">🚗 Saídas de campo (${ss.length})</div>
-      <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px">
-      <tr style="background:#f1f5f9;color:#475569"><th style="padding:3px 5px;text-align:left">Data</th><th style="padding:3px 5px;text-align:left">Local</th><th style="padding:3px 5px;text-align:right">⛽</th><th style="padding:3px 5px;text-align:right">🛣️</th><th style="padding:3px 5px;text-align:right">🍽️</th><th style="padding:3px 5px;text-align:right">Total</th></tr>`;
-      ss.forEach((sd,i)=>{const v=DB.veiculos.find(x=>x.id===sd.veiculoId);const c=v?calcComb(sd.km,v.kml,sd.valorLitro):(sd.combManual||0);const t=c+(sd.pedagio||0)+(sd.refeicao||0)+(sd.outros||0);
-        h+=`<tr style="background:${i%2?'#f8fafc':'#fff'}"><td style="padding:3px 5px">${fmtD(sd.data)}</td><td style="padding:3px 5px">${esc(sd.local)}</td><td style="padding:3px 5px;text-align:right">${fv(c)}</td><td style="padding:3px 5px;text-align:right">${fv(sd.pedagio)}</td><td style="padding:3px 5px;text-align:right">${fv(sd.refeicao)}</td><td style="padding:3px 5px;text-align:right;font-weight:600">${fv(t)}</td></tr>`;});
-      h+=`<tr style="background:#e2e8f0;font-weight:700;font-size:11px"><td colspan="2" style="padding:3px 5px">TOTAL</td><td style="padding:3px 5px;text-align:right">${fv(totComb)}</td><td style="padding:3px 5px;text-align:right">${fv(totPed)}</td><td style="padding:3px 5px;text-align:right">${fv(totRef)}</td><td style="padding:3px 5px;text-align:right">${fv(totDesp)}</td></tr></table>`;
-    }else{h+=`<div style="font-size:12px;color:#94a3b8;margin-bottom:6px">Nenhuma saída vinculada.</div>`;}
-
-    h+=`<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px;font-size:12px;line-height:1.8">
-    <div style="font-weight:700;color:#334155;margin-bottom:2px">💰 Resumo financeiro</div>
-    <div style="display:flex;justify-content:space-between"><span>Despesas Tatiana</span><span>${fv(totDesp)}</span></div>
-    <div style="display:flex;justify-content:space-between"><span>Imposto medição</span><span>${fv(imposto)}</span></div>`;
-    if(provs.length>0)provs.forEach(p=>{const ob=DB.obrigacoes.find(o=>o.id===p.obrigacaoId);const tp=ob?.tipo==='reembolso'?'💳':ob?.tipo==='desconto'?'🔻':'📌';const vr=p.valorReal!=null?p.valorReal:p.valor;const d=p.valor-vr;
-      h+=`<div style="display:flex;justify-content:space-between"><span>${tp} ${esc(ob?ob.nome:'Func.')}</span><span>${p.valorReal!=null?`<span style="text-decoration:line-through;color:#94a3b8;font-size:10px;margin-right:3px">${fv(p.valor)}</span>${fv(vr)}`:fv(p.valor)}</span></div>`;
-      if(d>0)h+=`<div style="display:flex;justify-content:space-between;font-size:11px;color:#1d4ed8"><span style="padding-left:16px">↩ devolvido ao pool</span><span>+${fv(d)}</span></div>`;});
-    h+=`<div style="display:flex;justify-content:space-between"><span>Ajuda custo veículo</span><span>${fv(ajuda)}</span></div>
-    <div style="display:flex;justify-content:space-between;border-top:1px solid #cbd5e1;padding-top:3px;margin-top:3px;font-weight:700"><span>Total despesas</span><span>${fv(totalDespFull)}</span></div>
-    <div style="display:flex;justify-content:space-between;margin-top:6px"><span>Medição bruta</span><span>${fv(f.valorTotal)}</span></div>
-    <div style="display:flex;justify-content:space-between"><span>Pagamento (−imposto)</span><span>${fv(valorPag)}</span></div>
-    <div style="display:flex;justify-content:space-between;font-weight:700;color:#059669"><span>Líquido</span><span>${fv(liq)}</span></div>
-    <div style="display:flex;justify-content:space-between;margin-top:6px;padding-top:4px;border-top:1px solid #cbd5e1"><span style="font-weight:600;color:#059669">Tatiana</span><span style="font-weight:700;color:#059669">${fv(tatRec)}</span></div>
-    <div style="display:flex;justify-content:space-between"><span style="font-weight:600;color:#1d4ed8">Ronaldo</span><span style="font-weight:700;color:#1d4ed8">${fv(ronRec)}</span></div>
-    </div></div>`;
+    // Details grid
+    const hasDetails=(f.envioMedicao&&f.envioMedicao!=='NaT')||(f.emissaoNF&&f.emissaoNF!=='NaT')||(f.prevPagamento&&f.prevPagamento!=='NaT')||(f.dataDeposito&&f.dataDeposito!=='NaT');
+    if(hasDetails){
+      h+=`<div class="card-details">`;
+      if(f.envioMedicao&&f.envioMedicao!=='NaT')h+=`<div class="detail-item"><span>Envio</span><strong>${fmtD(f.envioMedicao)}</strong></div>`;
+      if(f.emissaoNF&&f.emissaoNF!=='NaT')h+=`<div class="detail-item"><span>Emissão</span><strong>${fmtD(f.emissaoNF)}</strong></div>`;
+      if(f.prevPagamento&&f.prevPagamento!=='NaT')h+=`<div class="detail-item"><span>Previsão</span><strong>${fmtD(f.prevPagamento)}</strong></div>`;
+      if(f.dataDeposito&&f.dataDeposito!=='NaT')h+=`<div class="detail-item"><span>Depósito</span><strong>${fmtD(f.dataDeposito)}</strong></div>`;
+      if(f.obs)h+=`<div class="detail-item" style="grid-column:span 2"><span style="color:var(--warning-text)"><i class="fa-solid fa-triangle-exclamation"></i> Aviso</span><strong>${esc(f.obs)}</strong></div>`;
+      h+=`</div>`;
+    }
 
     // Arquivos
     if(arqs.length>0){
-      h+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">`;
+      h+=`<div style="display:flex;gap:8px;flex-wrap:wrap">`;
       arqs.forEach((a,i)=>{
         const isImg=a.nome.match(/\.(jpg|jpeg|png|gif|webp)$/i);
-        const tipoBg=a.tipo==='Nota Fiscal'?'#059669':a.tipo==='Medição'?'#2563eb':'#64748b';
+        const tipoBg=a.tipo==='Nota Fiscal'?'var(--success)':a.tipo==='Medição'?'var(--primary)':'var(--text-muted)';
         const tipoIcon=a.tipo==='Nota Fiscal'?'fa-file-invoice-dollar':a.tipo==='Medição'?'fa-ruler-combined':'fa-file';
         h+=`<div style="position:relative;display:flex;flex-direction:column;align-items:center;gap:2px">
         ${isImg?`<img src="${a.url}" class="nf-thumb" onclick="viewFile('${a.url}')">`:`<div class="nf-thumb" style="display:flex;align-items:center;justify-content:center;font-size:18px;background:#f1f5f9" onclick="viewFile('${a.url}')"><i class="fa-solid ${tipoIcon}" style="color:${tipoBg}"></i></div>`}
         <span style="font-size:.6rem;font-weight:600;color:${tipoBg};text-transform:uppercase">${esc(a.tipo||'Arquivo')}</span>
-        <button style="position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;border:none;border-radius:50%;width:16px;height:16px;font-size:9px;display:flex;align-items:center;justify-content:center;cursor:pointer" onclick="delNF('${f.id}','${a.path}',${i})">✕</button></div>`;
+        <button style="position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;border:none;border-radius:50%;width:16px;height:16px;font-size:9px;display:flex;align-items:center;justify-content:center;cursor:pointer" onclick="delNF('${f.id}','${a.path}',${i})">✕</button></div>`;
       });
       h+=`</div>`;
     }
-    h+=`<div class="card-actions"><button class="attach-btn" onclick="uploadNF('${f.id}')"><i class="fa-solid fa-paperclip"></i> Anexar documento</button><span id="upload-status-${f.id}" style="font-size:.75rem"></span></div></div>`;
-    h_arr.push(h);
+
+    // Actions
+    h+=`<div class="card-actions">
+      <button class="attach-btn" onclick="uploadNF('${f.id}')"><i class="fa-solid fa-paperclip"></i> Anexar documento</button>
+      <div style="display:flex;gap:4px"><span id="upload-status-${f.id}" style="font-size:.7rem"></span>
+      <button class="btn-icon check" title="${isPago?'Marcar pendente':'Marcar como pago'}" onclick="toggleFat('${f.id}')"><i class="fa-solid ${isPago?'fa-arrow-rotate-left':'fa-square-check'}"></i></button>
+      <button class="btn-icon edit" title="Editar" onclick="editFat('${f.id}')"><i class="fa-solid fa-pen"></i></button>
+      <button class="btn-icon" title="Acerto" onclick="gerarResumo('${f.id}')"><i class="fa-solid fa-file-lines"></i></button>
+      </div></div></div>`;
+    return h;
 }
 
 function renderFat(){
   const el=document.getElementById('tab-fat');
-  const allClientes=[...new Set(DB.faturamento.map(f=>normCl(f.clienteNorm||f.cliente)))].sort();
-  const filtered=window.fatCliente?DB.faturamento.filter(f=>normCl(f.clienteNorm||f.cliente)===window.fatCliente):DB.faturamento;
-  const pagos=sortFat(filtered.filter(f=>f.status==='Pago'));
-  const pend=sortFat(filtered.filter(f=>f.status!=='Pago'));
+  const allFat=sortFat(DB.faturamento);
+  const pagos=allFat.filter(f=>f.status==='Pago');
+  const pend=allFat.filter(f=>f.status!=='Pago');
 
-  let h=`<div class="sh"><h2 class="st">Faturamento</h2><button class="pri" onclick="novoFat()">+ Novo</button></div>
-  <div class="row" style="margin-bottom:10px;gap:12px">
-  <div style="flex:1"><label class="lb">Filtrar cliente</label><select class="sel" onchange="window.fatCliente=this.value;renderFat()"><option value="">Todos</option>${allClientes.map(c=>`<option value="${esc(c)}"${window.fatCliente===c?' selected':''}>${esc(c)}</option>`).join('')}</select></div>
-  <div class="cd" style="border-left:3px solid #10b981;flex:0 0 auto;min-width:140px"><div class="kl">Recebido</div><div class="kv" style="color:#059669;font-size:15px">${fmt(pagos.reduce((s,f)=>s+f.valorTotal,0))}</div><div class="ks">${pagos.length} medições</div></div>
-  <div class="cd" style="border-left:3px solid #f59e0b;flex:0 0 auto;min-width:140px"><div class="kl">Pendente</div><div class="kv" style="color:#b45309;font-size:15px">${fmt(pend.reduce((s,f)=>s+f.valorTotal,0))}</div><div class="ks">${pend.length} medições</div></div></div>`;
+  // Update topbar metrics
+  document.getElementById('top-metrics').innerHTML=`
+    <div class="metric-pill success"><span class="label">Total Recebido (${pagos.length})</span><span class="value">${fmt(pagos.reduce((s,f)=>s+f.valorTotal,0))}</span></div>
+    <div class="metric-pill warning"><span class="label">Total Pendente (${pend.length})</span><span class="value">${fmt(pend.reduce((s,f)=>s+f.valorTotal,0))}</span></div>
+    <button class="btn-primary" onclick="novoFat()"><i class="fa-solid fa-plus"></i> Novo Registro</button>`;
 
-  // Split: pendentes left, pagos right
-  h+=`<div class="split">`;
-  h+=`<div class="split-l">`;
-  h+=`<h3 style="font-size:14px;font-weight:700;color:#92400e;margin:0 0 8px">⏳ Pendentes (${pend.length})</h3>`;
-  if(pend.length){const arr=[];pend.forEach(f=>renderFatCard(f,arr));h+=arr.join('');}
-  else h+=`<div class="emp">Nenhum pendente.</div>`;
-  h+=`</div><div class="split-r">`;
-  h+=`<h3 style="font-size:14px;font-weight:700;color:#059669;margin:0 0 8px">✅ Pagos (${pagos.length})</h3>`;
-  if(pagos.length){const arr=[];pagos.forEach(f=>renderFatCard(f,arr));h+=arr.join('');}
-  else h+=`<div class="emp">Nenhum pago.</div>`;
-  h+=`</div></div>`;
+  // Group by client
+  const porCliente={};
+  allFat.forEach(f=>{const cl=normCl(f.clienteNorm||f.cliente);if(!porCliente[cl])porCliente[cl]=[];porCliente[cl].push(f);});
+  const clKeys=Object.keys(porCliente).sort();
 
+  let h=`<h2 style="font-size:.8rem;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);font-weight:600;margin-bottom:16px">Faturamentos por Cliente</h2>`;
+
+  clKeys.forEach(cl=>{
+    const fats=porCliente[cl];
+    const clPend=fats.filter(f=>f.status!=='Pago');
+    const clPago=fats.filter(f=>f.status==='Pago');
+    const initials=cl.replace(/Consórcio\s*/i,'').slice(0,2).toUpperCase();
+
+    h+=`<details class="client-group">
+    <summary class="client-header">
+      <div class="client-info"><div class="client-avatar">${initials}</div>
+      <div><div class="client-name">${esc(cl)}</div><div class="client-sub">Cliente corporativo</div></div></div>
+      <div class="client-stats">
+        ${clPend.length?`<div class="stat-badge pendente"><i class="fa-solid fa-hourglass-half"></i> ${clPend.length} Pendente${clPend.length>1?'s':''}</div>`:`<div class="stat-badge zero">0 Pendentes</div>`}
+        ${clPago.length?`<div class="stat-badge pago"><i class="fa-solid fa-check"></i> ${clPago.length} Pago${clPago.length>1?'s':''}</div>`:`<div class="stat-badge zero">0 Pagos</div>`}
+        <i class="fa-solid fa-chevron-down chevron"></i>
+      </div>
+    </summary>
+    <div class="client-content"><div class="cards-grid">`;
+    sortFat(fats).forEach(f=>{h+=renderFatCard(f);});
+    h+=`</div></div></details>`;
+  });
+
+  if(!clKeys.length)h+=`<div class="emp">Nenhum faturamento cadastrado.</div>`;
   el.innerHTML=h;
 }
 window.toggleDetail=function(id){const el=document.getElementById('det-'+id);if(el)el.style.display=el.style.display==='none'?'block':'none';};
