@@ -94,6 +94,7 @@ button{cursor:pointer;font-family:inherit}
   <div id="tab-fat" class="tab-content" style="display:none"></div>
   <div id="tab-saidas" class="tab-content" style="display:none"></div>
   <div id="tab-fixos" class="tab-content" style="display:none"></div>
+  <div id="tab-producao" class="tab-content" style="display:none"></div>
   <div id="tab-relatorio" class="tab-content" style="display:none"></div>
   <div id="tab-config" class="tab-content" style="display:none"></div>
 </main>
@@ -104,7 +105,7 @@ button{cursor:pointer;font-family:inherit}
 <script type="module">
 import{initializeApp}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
 import{getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-import{getFirestore,doc,setDoc,getDoc,onSnapshot}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import{getFirestore,doc,setDoc,getDoc,onSnapshot,collection,getDocs,query,where,orderBy}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import{getStorage,ref as sRef,uploadBytes,getDownloadURL,listAll,deleteObject}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
 
 const FC={apiKey:"AIzaSyAwwO2yLyNVnKMLFfmKKCx64zeh7Tbgrvc",authDomain:"vistoria-cautelar-71f6d.firebaseapp.com",projectId:"vistoria-cautelar-71f6d",storageBucket:"vistoria-cautelar-71f6d.firebasestorage.app",messagingSenderId:"157244396794",appId:"1:157244396794:web:c0b983583939e13e91a543"};
@@ -114,7 +115,7 @@ const firestore=getFirestore(app);
 const storage=getStorage(app);
 
 // ═══════ DATA ═══════
-let DB={medicoes:[],saidas:[],obrigacoes:[],provisoes:[],veiculos:[],faturamento:[],precoLitro:0,ajudaCustoVeiculo:1000};
+let DB={medicoes:[],saidas:[],obrigacoes:[],provisoes:[],veiculos:[],faturamento:[],precoLitro:0,ajudaCustoVeiculo:1000,producao:[],valoresRelatorio:[]};
 const DOC_REF=doc(firestore,'financeiro','data');
 let unsubSnap=null;
 
@@ -129,13 +130,25 @@ async function saveDB(){
   document.getElementById('sync-status').style.color='#991b1b';}
 }
 
+// ═══════ INTEGRAÇÃO VISTORIA CAUTELAR ═══════
+let vcClientes=[],vcColetores=[];
+async function loadVCData(){
+  try{
+    const[clSnap,colSnap]=await Promise.all([getDocs(collection(firestore,'clientes')),getDocs(collection(firestore,'coletores'))]);
+    vcClientes=[];clSnap.forEach(d=>vcClientes.push({id:d.id,...d.data()}));vcClientes.sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
+    vcColetores=[];colSnap.forEach(d=>vcColetores.push({id:d.id,...d.data()}));vcColetores.sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
+    console.log('VC data loaded:',vcClientes.length,'clientes,',vcColetores.length,'coletores');
+  }catch(e){console.error('loadVCData error:',e);}
+}
+const TIPOS_REL=['Simples','Completo','Sinistro','Nexo Causal'];
+
 function startSync(){
   unsubSnap=onSnapshot(DOC_REF,(snap)=>{
     if(snap.exists()){
       const d=snap.data();
       DB.medicoes=d.medicoes||[];DB.saidas=d.saidas||[];DB.obrigacoes=d.obrigacoes||[];
       DB.provisoes=d.provisoes||[];DB.veiculos=d.veiculos||[];DB.faturamento=d.faturamento||[];
-      DB.precoLitro=d.precoLitro||0;DB.ajudaCustoVeiculo=d.ajudaCustoVeiculo??1000;
+      DB.precoLitro=d.precoLitro||0;DB.ajudaCustoVeiculo=d.ajudaCustoVeiculo??1000;DB.producao=d.producao||[];DB.valoresRelatorio=d.valoresRelatorio||[];
       document.getElementById('sync-status').textContent='sincronizado';
       document.getElementById('sync-status').style.background='#d1fae5';
       document.getElementById('sync-status').style.color='#065f46';
@@ -172,7 +185,7 @@ window.doLogin=async function(){
 window.doLogout=function(){if(unsubSnap)unsubSnap();signOut(auth);};
 
 onAuthStateChanged(auth,(user)=>{
-  if(user){document.getElementById('login-screen').style.display='none';document.getElementById('app').style.display='block';startSync();}
+  if(user){document.getElementById('login-screen').style.display='none';document.getElementById('app').style.display='block';startSync();loadVCData();}
   else{document.getElementById('login-screen').style.display='flex';document.getElementById('app').style.display='none';if(unsubSnap)unsubSnap();}
 });
 
@@ -225,7 +238,7 @@ function getTot(sd){const v=DB.veiculos.find(x=>x.id===sd.veiculoId);return(v?ca
 
 // ═══════ TABS ═══════
 let curTab='painel';
-const TABS=[{id:'painel',icon:'📊',label:'Painel'},{id:'fat',icon:'💰',label:'Faturamento'},{id:'saidas',icon:'🚗',label:'Saídas'},{id:'fixos',icon:'📋',label:'Previsões'},{id:'relatorio',icon:'📈',label:'Relatório'},{id:'config',icon:'⚙️',label:'Config'}];
+const TABS=[{id:'painel',icon:'📊',label:'Painel'},{id:'fat',icon:'💰',label:'Faturamento'},{id:'saidas',icon:'🚗',label:'Saídas'},{id:'fixos',icon:'📋',label:'Previsões'},{id:'producao',icon:'📝',label:'Produção'},{id:'relatorio',icon:'📈',label:'Relatório'},{id:'config',icon:'⚙️',label:'Config'}];
 
 function renderNav(){
   let nP=0;DB.obrigacoes.filter(o=>o.ativo).forEach(ob=>{const tp=ob.totalParcelas||0;const pc=DB.provisoes.filter(pv=>pv.obrigacaoId===ob.id).length;if(tp>0&&pc>=tp)return;const ed=tp>0?(()=>{const d=new Date(ob.dataInicio+'T12:00:00');d.setMonth(d.getMonth()+tp);return d.toISOString().slice(0,10);})():'2026-07-31';getPeriodos(ob.dataInicio,ed).forEach(p=>{if(!DB.provisoes.some(pv=>pv.obrigacaoId===ob.id&&pv.periodoInicio===p.inicio))nP++;});});
@@ -233,8 +246,8 @@ function renderNav(){
   document.getElementById('nav').innerHTML=TABS.map(t=>`<button class="nb${curTab===t.id?' act':''}" onclick="switchTab('${t.id}')"><span class="ico">${t.icon}</span><span>${t.label}</span>${t.id==='painel'&&nP>0?`<span class="bdg">${nP}</span>`:''}${t.id==='fat'&&nFP>0?`<span class="bdg" style="background:#f59e0b">${nFP}</span>`:''}</button>`).join('');
 }
 window.switchTab=function(id){curTab=id;document.querySelectorAll('.tab-content').forEach(el=>{el.style.display='none'});document.getElementById('tab-'+id).style.display='block';renderNav();render();};
-function render(){renderNav();({painel:renderPainel,fat:renderFat,saidas:renderSaidas,fixos:renderFixos,relatorio:renderRelatorio,config:renderConfig})[curTab]?.();}
-window.renderFat=()=>renderFat();window.renderSaidas=()=>renderSaidas();window.renderFixos=()=>renderFixos();window.renderConfig=()=>renderConfig();window.renderRelatorio=()=>renderRelatorio();
+function render(){renderNav();({painel:renderPainel,fat:renderFat,saidas:renderSaidas,fixos:renderFixos,producao:renderProducao,relatorio:renderRelatorio,config:renderConfig})[curTab]?.();}
+window.renderFat=()=>renderFat();window.renderSaidas=()=>renderSaidas();window.renderFixos=()=>renderFixos();window.renderConfig=()=>renderConfig();window.renderProducao=()=>renderProducao();window.renderRelatorio=()=>renderRelatorio();
 
 // ═══════ PAINEL ═══════
 function renderPainel(){
@@ -661,6 +674,127 @@ window.salvarPr=async function(){const obId=document.getElementById('pf-o').valu
   const ps=getPeriodos(ob.dataInicio,endDate);const p=ps.find(x=>x.inicio===per);
   if(totalParc>0&&DB.provisoes.filter(pv=>pv.obrigacaoId===obId).length>=totalParc)return alert('Todas as parcelas já foram provisionadas');
   DB.provisoes.push({id:uid(),obrigacaoId:obId,periodoInicio:per,periodo:p?.label||'',valor:parseBRL(document.getElementById('pf-v').value),ref:document.getElementById('pf-r').value||'Manual',dt:new Date().toISOString()});await saveDB();};
+
+// ═══════ PRODUÇÃO ═══════
+function renderProducao(){
+  const el=document.getElementById('tab-producao');
+  // Unique months from producao, sorted newest first
+  const meses=[...new Set(DB.producao.map(p=>p.mesRef))].sort((a,b)=>mesOrder(b)-mesOrder(a));
+
+  let h=`<div class="sh"><h2 class="st">Produção mensal</h2><div style="display:flex;gap:6px"><button class="sec" onclick="novaProducao()">+ Lançar</button><button class="pri" onclick="editValores()">💲 Valores</button></div></div>
+  <p style="font-size:12px;color:#64748b;margin-bottom:12px">Registre quantas vistorias foram realizadas por cliente/coletor/tipo a cada mês.</p>`;
+
+  // Summary cards
+  const totalVist=DB.producao.reduce((s,p)=>s+p.quantidade,0);
+  const totalValor=DB.producao.reduce((s,p)=>{const vr=DB.valoresRelatorio.find(v=>v.clienteId===p.clienteId&&v.tipoRelatorio===p.tipoRelatorio);return s+p.quantidade*(vr?vr.valorUnitario:0);},0);
+  h+=`<div class="g2"><div class="cd" style="border-left:3px solid #8b5cf6"><div class="kl">Total vistorias</div><div class="kv" style="color:#7c3aed">${totalVist}</div></div>
+  <div class="cd" style="border-left:3px solid #059669"><div class="kl">Valor produzido</div><div class="kv" style="color:#059669">${fmt(totalValor)}</div></div></div>`;
+
+  // Group by month
+  if(meses.length){
+    meses.forEach(mes=>{
+      const prods=DB.producao.filter(p=>p.mesRef===mes);
+      const totMes=prods.reduce((s,p)=>s+p.quantidade,0);
+      const valMes=prods.reduce((s,p)=>{const vr=DB.valoresRelatorio.find(v=>v.clienteId===p.clienteId&&v.tipoRelatorio===p.tipoRelatorio);return s+p.quantidade*(vr?vr.valorUnitario:0);},0);
+      h+=`<div class="fc"><div class="lh" style="margin-bottom:6px"><h3 style="font-size:14px;font-weight:700">${esc(mes)}</h3><div style="text-align:right"><strong>${totMes} vistorias</strong><div style="font-size:12px;color:#059669;font-weight:600">${fmt(valMes)}</div></div></div>`;
+      // Group by client within month
+      const porCliente={};
+      prods.forEach(p=>{const k=p.clienteNome||p.clienteId;if(!porCliente[k])porCliente[k]=[];porCliente[k].push(p);});
+      Object.entries(porCliente).forEach(([cl,items])=>{
+        h+=`<div style="margin-bottom:6px;padding:6px 8px;background:#f8fafc;border-radius:6px"><div style="font-size:12px;font-weight:700;color:#1d4ed8;margin-bottom:3px">${esc(cl)}</div>`;
+        items.forEach(p=>{
+          const vr=DB.valoresRelatorio.find(v=>v.clienteId===p.clienteId&&v.tipoRelatorio===p.tipoRelatorio);
+          const val=vr?vr.valorUnitario:0;
+          h+=`<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:2px 0">
+          <span>${esc(p.coletorNome||'—')} · <span style="color:#7c3aed">${esc(p.tipoRelatorio)}</span></span>
+          <span style="display:flex;align-items:center;gap:6px"><strong>${p.quantidade}x</strong>${val?`<span style="color:#059669">${fmt(p.quantidade*val)}</span>`:''}
+          <button class="sm" onclick="delProducao('${p.id}')" style="font-size:14px">🗑️</button></span></div>`;
+        });
+        h+=`</div>`;
+      });
+      h+=`</div>`;
+    });
+  }else{
+    h+=`<div class="emp">Nenhum registro. Clique em "+ Lançar" para começar.</div>`;
+  }
+  el.innerHTML=h;
+}
+
+window.novaProducao=function(){
+  const el=document.getElementById('tab-producao');
+  const clOpts=vcClientes.length?vcClientes.map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join(''):CLIENTES.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  el.innerHTML=`<div class="fc"><h3 style="margin:0 0 12px;font-size:16px;font-weight:700">Lançar produção</h3>
+  <div class="row"><div style="flex:1"><label class="lb">Mês/Ano</label><input class="inp" id="pd-mes" placeholder="Julho 2026"></div><div style="flex:1"><label class="lb">Tipo relatório</label><select class="sel" id="pd-tipo">${TIPOS_REL.map(t=>`<option>${t}</option>`).join('')}</select></div></div>
+  <div class="row"><div style="flex:1"><label class="lb">Cliente</label><select class="sel" id="pd-cl" onchange="updPdCol()"><option value="">Selecione</option>${clOpts}</select></div>
+  <div style="flex:1"><label class="lb">Coletor</label><select class="sel" id="pd-col" disabled><option value="">—</option></select></div></div>
+  <div class="row"><div style="flex:1"><label class="lb">Quantidade de vistorias</label><input class="inp" type="number" id="pd-qt" min="1" value="1"></div></div>
+  <div class="acts"><button class="can" onclick="renderProducao()">Cancelar</button><button class="pri" onclick="salvarProducao()">Salvar</button></div></div>`;
+};
+
+window.updPdCol=function(){
+  const clId=document.getElementById('pd-cl').value;
+  const sel=document.getElementById('pd-col');
+  sel.disabled=!clId;
+  const cols=vcColetores.filter(c=>c.clienteId===clId);
+  sel.innerHTML=`<option value="">Todos / Geral</option>${cols.map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join('')}`;
+};
+
+window.salvarProducao=async function(){
+  const mesRef=document.getElementById('pd-mes').value;
+  const tipo=document.getElementById('pd-tipo').value;
+  const clSel=document.getElementById('pd-cl');
+  const clienteId=clSel.value;
+  const clienteNome=clSel.selectedOptions[0]?.textContent||clienteId;
+  const colSel=document.getElementById('pd-col');
+  const coletorId=colSel.value;
+  const coletorNome=colSel.selectedOptions[0]?.textContent||'';
+  const qt=parseInt(document.getElementById('pd-qt').value)||0;
+  if(!mesRef||!clienteId||qt<=0)return alert('Preencha mês, cliente e quantidade');
+  DB.producao.push({id:uid(),mesRef,tipoRelatorio:tipo,clienteId,clienteNome,coletorId,coletorNome:coletorId?coletorNome:'Geral',quantidade:qt});
+  await saveDB();
+};
+
+window.delProducao=async function(id){if(confirm('Excluir?')){DB.producao=DB.producao.filter(x=>x.id!==id);await saveDB();}};
+
+window.editValores=function(){
+  const el=document.getElementById('tab-producao');
+  const clOpts=vcClientes.length?vcClientes.map(c=>`<option value="${c.id}" data-nome="${esc(c.nome)}">${esc(c.nome)}</option>`).join(''):CLIENTES.map(c=>`<option value="${esc(c)}" data-nome="${esc(c)}">${esc(c)}</option>`).join('');
+  let h=`<div class="fc"><h3 style="margin:0 0 12px;font-size:16px;font-weight:700">💲 Valores por relatório</h3>
+  <p style="font-size:12px;color:#64748b;margin-bottom:10px">Defina o valor unitário de cada tipo de relatório por cliente.</p>
+  <div class="row" style="margin-bottom:10px"><div style="flex:1"><label class="lb">Cliente</label><select class="sel" id="vr-cl" onchange="updValoresForm()"><option value="">Selecione</option>${clOpts}</select></div></div>
+  <div id="vr-form"></div>
+  <div class="acts"><button class="can" onclick="renderProducao()">Voltar</button></div></div>`;
+  el.innerHTML=h;
+};
+
+window.updValoresForm=function(){
+  const clSel=document.getElementById('vr-cl');
+  const clId=clSel.value;
+  const clNome=clSel.selectedOptions[0]?.textContent||'';
+  if(!clId){document.getElementById('vr-form').innerHTML='';return;}
+  let h='';
+  TIPOS_REL.forEach(tipo=>{
+    const existing=DB.valoresRelatorio.find(v=>v.clienteId===clId&&v.tipoRelatorio===tipo);
+    const val=existing?existing.valorUnitario.toFixed(2).replace('.',','):'';
+    h+=`<div class="row" style="margin-bottom:6px"><div style="flex:1"><label class="lb">${tipo}</label><input class="inp vr-inp" data-tipo="${tipo}" value="${val}" placeholder="0,00" inputmode="decimal"></div></div>`;
+  });
+  h+=`<div class="acts" style="margin-top:10px"><button class="pri" onclick="salvarValores('${clId}','${esc(clNome)}')">Salvar valores</button></div>`;
+  document.getElementById('vr-form').innerHTML=h;
+};
+
+window.salvarValores=async function(clId,clNome){
+  document.querySelectorAll('.vr-inp').forEach(inp=>{
+    const tipo=inp.dataset.tipo;
+    const val=parseBRL(inp.value);
+    const idx=DB.valoresRelatorio.findIndex(v=>v.clienteId===clId&&v.tipoRelatorio===tipo);
+    if(val>0){
+      if(idx>=0)DB.valoresRelatorio[idx].valorUnitario=val;
+      else DB.valoresRelatorio.push({clienteId:clId,clienteNome:clNome,tipoRelatorio:tipo,valorUnitario:val});
+    }else if(idx>=0){DB.valoresRelatorio.splice(idx,1);}
+  });
+  await saveDB();
+  alert('Valores salvos!');
+};
 
 // ═══════ RELATÓRIO ═══════
 window.relPeriodo='';window.relCliente='';
