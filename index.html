@@ -94,6 +94,7 @@ button{cursor:pointer;font-family:inherit}
   <div id="tab-fat" class="tab-content" style="display:none"></div>
   <div id="tab-saidas" class="tab-content" style="display:none"></div>
   <div id="tab-fixos" class="tab-content" style="display:none"></div>
+  <div id="tab-relatorio" class="tab-content" style="display:none"></div>
   <div id="tab-config" class="tab-content" style="display:none"></div>
 </main>
 </div>
@@ -224,7 +225,7 @@ function getTot(sd){const v=DB.veiculos.find(x=>x.id===sd.veiculoId);return(v?ca
 
 // ═══════ TABS ═══════
 let curTab='painel';
-const TABS=[{id:'painel',icon:'📊',label:'Painel'},{id:'fat',icon:'💰',label:'Faturamento'},{id:'saidas',icon:'🚗',label:'Saídas'},{id:'fixos',icon:'📋',label:'Previsões'},{id:'config',icon:'⚙️',label:'Config'}];
+const TABS=[{id:'painel',icon:'📊',label:'Painel'},{id:'fat',icon:'💰',label:'Faturamento'},{id:'saidas',icon:'🚗',label:'Saídas'},{id:'fixos',icon:'📋',label:'Previsões'},{id:'relatorio',icon:'📈',label:'Relatório'},{id:'config',icon:'⚙️',label:'Config'}];
 
 function renderNav(){
   let nP=0;DB.obrigacoes.filter(o=>o.ativo).forEach(ob=>{const tp=ob.totalParcelas||0;const pc=DB.provisoes.filter(pv=>pv.obrigacaoId===ob.id).length;if(tp>0&&pc>=tp)return;const ed=tp>0?(()=>{const d=new Date(ob.dataInicio+'T12:00:00');d.setMonth(d.getMonth()+tp);return d.toISOString().slice(0,10);})():'2026-07-31';getPeriodos(ob.dataInicio,ed).forEach(p=>{if(!DB.provisoes.some(pv=>pv.obrigacaoId===ob.id&&pv.periodoInicio===p.inicio))nP++;});});
@@ -232,7 +233,8 @@ function renderNav(){
   document.getElementById('nav').innerHTML=TABS.map(t=>`<button class="nb${curTab===t.id?' act':''}" onclick="switchTab('${t.id}')"><span class="ico">${t.icon}</span><span>${t.label}</span>${t.id==='painel'&&nP>0?`<span class="bdg">${nP}</span>`:''}${t.id==='fat'&&nFP>0?`<span class="bdg" style="background:#f59e0b">${nFP}</span>`:''}</button>`).join('');
 }
 window.switchTab=function(id){curTab=id;document.querySelectorAll('.tab-content').forEach(el=>{el.style.display='none'});document.getElementById('tab-'+id).style.display='block';renderNav();render();};
-function render(){renderNav();({painel:renderPainel,fat:renderFat,saidas:renderSaidas,fixos:renderFixos,config:renderConfig})[curTab]?.();}
+function render(){renderNav();({painel:renderPainel,fat:renderFat,saidas:renderSaidas,fixos:renderFixos,relatorio:renderRelatorio,config:renderConfig})[curTab]?.();}
+window.renderFat=()=>renderFat();window.renderSaidas=()=>renderSaidas();window.renderFixos=()=>renderFixos();window.renderConfig=()=>renderConfig();window.renderRelatorio=()=>renderRelatorio();
 
 // ═══════ PAINEL ═══════
 function renderPainel(){
@@ -252,22 +254,22 @@ function renderPainel(){
   const per=alertas.filter(a=>a.tipo==='p'),prx=alertas.filter(a=>a.tipo==='n');
   const fatP=DB.faturamento.filter(f=>f.status==='Pago').reduce((s,f)=>s+(f.valorTotal||0),0);
   const fatPend=DB.faturamento.filter(f=>f.status!=='Pago').reduce((s,f)=>s+(f.valorTotal||0),0);
-  const tS=DB.saidas.reduce((s,x)=>s+getTot(x),0);
-  let h='';
+    let h='';
   if(per.length>0){h+=`<div class="al-r"><h3 style="margin:0 0 4px;font-size:13px;color:#991b1b">⚠️ Provisão pendente (${per.length})</h3>`;
     per.forEach(a=>{h+=`<div class="al-i"><div><strong style="font-size:12px">${esc(a.nome)}</strong><div style="font-size:10px;color:#6b7280">${a.periodo}</div><div style="font-weight:700;color:#dc2626;font-size:13px">${fmt(a.valor)}</div></div><button class="al-btn" onclick="provM('${a.obId}','${a.pi}','${a.periodo}',${a.valor})">Provisionar</button></div>`;});h+=`</div>`;}
   else h+=`<div class="ok-b"><span style="font-size:20px">✅</span><div><strong>Provisões em dia</strong></div></div>`;
   if(prx.length>0){h+=`<div class="al-y"><h3 style="margin:0 0 6px;font-size:13px;color:#92400e">📅 Próximo ciclo</h3>`;
     prx.forEach(a=>{h+=`<div class="al-i" style="border-color:#fde68a"><div><strong style="font-size:12px">${esc(a.nome)}</strong><div style="font-size:10px;color:#6b7280">${a.periodo}</div><div style="font-weight:700;color:#92400e">${fmt(a.valor)}</div></div><button class="al-btn" style="background:#f59e0b" onclick="provM('${a.obId}','${a.pi}','${a.periodo}',${a.valor})">Provisionar</button></div>`;});h+=`</div>`;}
-  h+=`<div class="g3"><div class="cd" style="border-left:3px solid #10b981"><div class="kl">Recebido</div><div class="kv" style="font-size:14px;color:#059669">${fmt(fatP)}</div></div>
-  <div class="cd" style="border-left:3px solid #f59e0b"><div class="kl">Pendente</div><div class="kv" style="font-size:14px;color:#b45309">${fmt(fatPend)}</div></div>
-  <div class="cd" style="border-left:3px solid #f97316"><div class="kl">Despesas</div><div class="kv" style="font-size:14px">${fmt(tS)}</div></div></div>`;
+  const fatTotal=fatP+fatPend;
+  h+=`<div class="g3"><div class="cd" style="border-left:3px solid #3b82f6"><div class="kl">Faturamento</div><div class="kv" style="color:#1d4ed8">${fmt(fatTotal)}</div></div>
+  <div class="cd" style="border-left:3px solid #10b981"><div class="kl">Recebido</div><div class="kv" style="color:#059669">${fmt(fatP)}</div></div>
+  <div class="cd" style="border-left:3px solid #f59e0b"><div class="kl">Pendente</div><div class="kv" style="color:#b45309">${fmt(fatPend)}</div></div></div>`;
   el.innerHTML=h;
 }
 window.provM=async function(obId,pi,per,val){DB.provisoes.push({id:uid(),obrigacaoId:obId,periodoInicio:pi,periodo:per,valor:val,ref:'Manual',dt:new Date().toISOString()});await saveDB();};
 
 // ═══════ FATURAMENTO ═══════
-let fatCliente='';
+window.fatCliente='';
 function sortFat(arr){return[...arr].sort((a,b)=>mesOrder(b.mesRef)-mesOrder(a.mesRef));}
 function renderFatCard(f,h_arr){
     const isPago=f.status==='Pago';
@@ -346,11 +348,11 @@ function renderFatCard(f,h_arr){
 function renderFat(){
   const el=document.getElementById('tab-fat');
   const allClientes=[...new Set(DB.faturamento.map(f=>normCl(f.clienteNorm||f.cliente)))].sort();
-  const filtered=fatCliente?DB.faturamento.filter(f=>normCl(f.clienteNorm||f.cliente)===fatCliente):DB.faturamento;
+  const filtered=window.fatCliente?DB.faturamento.filter(f=>normCl(f.clienteNorm||f.cliente)===window.fatCliente):DB.faturamento;
   const pagos=sortFat(filtered.filter(f=>f.status==='Pago'));
   const pend=sortFat(filtered.filter(f=>f.status!=='Pago'));
   let h=`<div class="sh"><h2 class="st">Faturamento</h2><button class="pri" onclick="novoFat()">+ Novo</button></div>
-  <div style="margin-bottom:10px"><label class="lb">Filtrar cliente</label><select class="sel" onchange="fatCliente=this.value;renderFat()"><option value="">Todos</option>${allClientes.map(c=>`<option value="${esc(c)}"${fatCliente===c?' selected':''}>${esc(c)}</option>`).join('')}</select></div>
+  <div style="margin-bottom:10px"><label class="lb">Filtrar cliente</label><select class="sel" onchange="window.fatCliente=this.value;renderFat()"><option value="">Todos</option>${allClientes.map(c=>`<option value="${esc(c)}"${window.fatCliente===c?' selected':''}>${esc(c)}</option>`).join('')}</select></div>
   <div class="g2"><div class="cd" style="border-left:3px solid #10b981"><div class="kl">Recebido</div><div class="kv" style="color:#059669">${fmt(pagos.reduce((s,f)=>s+f.valorTotal,0))}</div><div class="ks">${pagos.length} medições</div></div>
   <div class="cd" style="border-left:3px solid #f59e0b"><div class="kl">Pendente</div><div class="kv" style="color:#b45309">${fmt(pend.reduce((s,f)=>s+f.valorTotal,0))}</div><div class="ks">${pend.length} medições</div></div></div>`;
 
@@ -520,21 +522,21 @@ window.exportResumoImg=async function(cl,mes){
 window.closeModal=function(){document.getElementById('modal-container').innerHTML='';};
 
 // ═══════ SAÍDAS ═══════
-let sfCliente='',sfMed='';
+window.sfCliente='';window.sfMed='';
 function renderSaidas(){
   const el=document.getElementById('tab-saidas');
   const clientes=[...new Set(DB.medicoes.map(m=>normCl(m.consorcio)))].sort();
-  const mesesDoCliente=sfCliente?DB.medicoes.filter(m=>normCl(m.consorcio)===sfCliente).sort((a,b)=>(a.mesRef||'').localeCompare(b.mesRef||'')):[];
+  const mesesDoCliente=window.sfCliente?DB.medicoes.filter(m=>normCl(m.consorcio)===window.sfCliente).sort((a,b)=>(a.mesRef||'').localeCompare(b.mesRef||'')):[];
 
   let h=`<div class="sh"><h2 class="st">Saídas de campo</h2><button class="pri" onclick="novaSaida()">+ Nova</button></div>
   <div class="row" style="margin-bottom:10px">
-  <div style="flex:1"><label class="lb">Cliente</label><select class="sel" onchange="sfCliente=this.value;sfMed='';renderSaidas()"><option value="">Todos</option>${clientes.map(c=>`<option value="${esc(c)}"${sfCliente===c?' selected':''}>${esc(c)}</option>`).join('')}</select></div>
-  <div style="flex:1"><label class="lb">Medição</label><select class="sel" onchange="sfMed=this.value;renderSaidas()"${!sfCliente?' disabled':''}><option value="">Todas</option>${mesesDoCliente.map(m=>`<option value="${m.id}"${sfMed===m.id?' selected':''}>${esc(m.mesRef)}</option>`).join('')}</select></div></div>`;
+  <div style="flex:1"><label class="lb">Cliente</label><select class="sel" onchange="window.sfCliente=this.value;window.sfMed='';renderSaidas()"><option value="">Todos</option>${clientes.map(c=>`<option value="${esc(c)}"${window.sfCliente===c?' selected':''}>${esc(c)}</option>`).join('')}</select></div>
+  <div style="flex:1"><label class="lb">Medição</label><select class="sel" onchange="window.sfMed=this.value;renderSaidas()"${!window.sfCliente?' disabled':''}><option value="">Todas</option>${mesesDoCliente.map(m=>`<option value="${m.id}"${window.sfMed===m.id?' selected':''}>${esc(m.mesRef)}</option>`).join('')}</select></div></div>`;
 
   const fl=DB.saidas.filter(x=>{
-    if(!sfCliente&&!sfMed)return true;
-    if(sfMed)return x.medicaoId===sfMed;
-    if(sfCliente){const mids=DB.medicoes.filter(m=>normCl(m.consorcio)===sfCliente).map(m=>m.id);return mids.includes(x.medicaoId);}
+    if(!window.sfCliente&&!window.sfMed)return true;
+    if(window.sfMed)return x.medicaoId===window.sfMed;
+    if(window.sfCliente){const mids=DB.medicoes.filter(m=>normCl(m.consorcio)===window.sfCliente).map(m=>m.id);return mids.includes(x.medicaoId);}
     return true;
   }).sort((a,b)=>(b.data||'').localeCompare(a.data||''));
   let tF=fl.reduce((s,sd)=>s+getTot(sd),0);
@@ -659,6 +661,87 @@ window.salvarPr=async function(){const obId=document.getElementById('pf-o').valu
   const ps=getPeriodos(ob.dataInicio,endDate);const p=ps.find(x=>x.inicio===per);
   if(totalParc>0&&DB.provisoes.filter(pv=>pv.obrigacaoId===obId).length>=totalParc)return alert('Todas as parcelas já foram provisionadas');
   DB.provisoes.push({id:uid(),obrigacaoId:obId,periodoInicio:per,periodo:p?.label||'',valor:parseBRL(document.getElementById('pf-v').value),ref:document.getElementById('pf-r').value||'Manual',dt:new Date().toISOString()});await saveDB();};
+
+// ═══════ RELATÓRIO ═══════
+window.relPeriodo='';window.relCliente='';
+function renderRelatorio(){
+  const el=document.getElementById('tab-relatorio');
+  const clientes=[...new Set(DB.faturamento.map(f=>normCl(f.clienteNorm||f.cliente)))].sort();
+  const meses=[...new Set(DB.faturamento.map(f=>f.mesRef).filter(Boolean))].sort((a,b)=>mesOrder(a)-mesOrder(b));
+
+  // Filter data
+  const filteredFat=DB.faturamento.filter(f=>{
+    if(window.relCliente&&normCl(f.clienteNorm||f.cliente)!==window.relCliente)return false;
+    if(window.relPeriodo&&f.mesRef!==window.relPeriodo)return false;
+    return true;
+  });
+  const filteredMedIds=new Set();
+  filteredFat.forEach(f=>{const cl=f.clienteNorm||f.cliente;const med=DB.medicoes.find(m=>m.consorcio===cl&&f.mesRef&&f.mesRef.includes(m.mesRef));if(med)filteredMedIds.add(med.id);});
+  const filteredSaidas=DB.saidas.filter(s=>!filteredMedIds.size||filteredMedIds.has(s.medicaoId));
+
+  const totMedido=filteredFat.reduce((s,f)=>s+f.valorTotal,0);
+  const totRecebido=filteredFat.filter(f=>f.status==='Pago').reduce((s,f)=>s+f.valorTotal,0);
+  const totPendente=filteredFat.filter(f=>f.status!=='Pago').reduce((s,f)=>s+f.valorTotal,0);
+  const totGastos=filteredSaidas.reduce((s,sd)=>s+getTot(sd),0);
+  const nVistorias=filteredSaidas.length;
+
+  // Count by client
+  const porCliente={};
+  filteredFat.forEach(f=>{const cl=normCl(f.clienteNorm||f.cliente);if(!porCliente[cl])porCliente[cl]={medido:0,saidas:0,gastos:0};porCliente[cl].medido+=f.valorTotal;});
+  filteredSaidas.forEach(sd=>{const med=DB.medicoes.find(m=>m.id===sd.medicaoId);if(med){const cl=normCl(med.consorcio);if(!porCliente[cl])porCliente[cl]={medido:0,saidas:0,gastos:0};porCliente[cl].saidas++;porCliente[cl].gastos+=getTot(sd);}});
+
+  let h=`<div class="sh"><h2 class="st">Relatório</h2></div>
+  <div class="row" style="margin-bottom:12px">
+  <div style="flex:1"><label class="lb">Cliente</label><select class="sel" onchange="window.relCliente=this.value;renderRelatorio()"><option value="">Todos</option>${clientes.map(c=>`<option value="${esc(c)}"${window.relCliente===c?' selected':''}>${esc(c)}</option>`).join('')}</select></div>
+  <div style="flex:1"><label class="lb">Período</label><select class="sel" onchange="window.relPeriodo=this.value;renderRelatorio()"><option value="">Todos</option>${meses.map(m=>`<option value="${esc(m)}"${window.relPeriodo===m?' selected':''}>${esc(m)}</option>`).join('')}</select></div></div>`;
+
+  // Summary cards
+  h+=`<div class="g2" style="margin-bottom:4px">
+  <div class="cd" style="border-left:3px solid #3b82f6"><div class="kl">Total medido</div><div class="kv" style="color:#1d4ed8">${fmt(totMedido)}</div></div>
+  <div class="cd" style="border-left:3px solid #10b981"><div class="kl">Recebido</div><div class="kv" style="color:#059669">${fmt(totRecebido)}</div></div></div>
+  <div class="g2">
+  <div class="cd" style="border-left:3px solid #f59e0b"><div class="kl">Pendente</div><div class="kv" style="color:#b45309">${fmt(totPendente)}</div></div>
+  <div class="cd" style="border-left:3px solid #f97316"><div class="kl">Gastos (${nVistorias} saídas)</div><div class="kv">${fmt(totGastos)}</div></div></div>`;
+
+  // Bar chart by client
+  const clKeys=Object.keys(porCliente).sort();
+  if(clKeys.length>0){
+    const maxVal=Math.max(...clKeys.map(k=>porCliente[k].medido),1);
+    h+=`<div class="fc" style="margin-top:12px"><h3 style="font-size:14px;font-weight:700;margin-bottom:10px">📊 Medido por cliente</h3>`;
+    clKeys.forEach(k=>{const d=porCliente[k];const pct=Math.round(d.medido/maxVal*100);
+      h+=`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:2px"><span>${esc(k)}</span><span>${fmt(d.medido)}</span></div>
+      <div style="background:#e2e8f0;border-radius:4px;height:20px;overflow:hidden"><div style="width:${pct}%;height:100%;background:linear-gradient(90deg,#3b82f6,#1d4ed8);border-radius:4px;transition:width .4s"></div></div>
+      <div style="font-size:11px;color:#64748b;margin-top:2px">${d.saidas} saídas · Gastos: ${fmt(d.gastos)}</div></div>`;
+    });
+    h+=`</div>`;
+
+    // Gastos chart
+    h+=`<div class="fc"><h3 style="font-size:14px;font-weight:700;margin-bottom:10px">💰 Gastos por cliente</h3>`;
+    const maxGasto=Math.max(...clKeys.map(k=>porCliente[k].gastos),1);
+    clKeys.forEach(k=>{const d=porCliente[k];if(d.gastos<=0)return;const pct=Math.round(d.gastos/maxGasto*100);
+      h+=`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:2px"><span>${esc(k)}</span><span>${fmt(d.gastos)}</span></div>
+      <div style="background:#e2e8f0;border-radius:4px;height:20px;overflow:hidden"><div style="width:${pct}%;height:100%;background:linear-gradient(90deg,#f97316,#ea580c);border-radius:4px;transition:width .4s"></div></div>
+      <div style="font-size:11px;color:#64748b;margin-top:2px">${d.saidas} saídas</div></div>`;
+    });
+    h+=`</div>`;
+  }
+
+  // Table
+  if(filteredFat.length){
+    h+=`<div class="fc"><h3 style="font-size:14px;font-weight:700;margin-bottom:10px">📋 Detalhamento</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+    <tr style="background:#f1f5f9"><th style="padding:6px 8px;text-align:left">Cliente</th><th style="padding:6px 8px;text-align:left">Mês</th><th style="padding:6px 8px;text-align:right">Medido</th><th style="padding:6px 8px;text-align:right">Saídas</th><th style="padding:6px 8px;text-align:center">Status</th></tr>`;
+    sortFat(filteredFat).forEach((f,i)=>{
+      const cl=normCl(f.clienteNorm||f.cliente);
+      const med=DB.medicoes.find(m=>m.consorcio===(f.clienteNorm||f.cliente)&&f.mesRef&&f.mesRef.includes(m.mesRef));
+      const ns=med?DB.saidas.filter(s=>s.medicaoId===med.id).length:0;
+      h+=`<tr style="background:${i%2?'#f8fafc':'#fff'}"><td style="padding:5px 8px">${esc(cl)}</td><td style="padding:5px 8px">${esc(f.mesRef)}</td><td style="padding:5px 8px;text-align:right;font-weight:600">${fmt(f.valorTotal)}</td><td style="padding:5px 8px;text-align:right">${ns}</td><td style="padding:5px 8px;text-align:center"><span class="${f.status==='Pago'?'status-pago':'status-pend'}">${f.status}</span></td></tr>`;
+    });
+    h+=`</table></div>`;
+  }
+
+  el.innerHTML=h;
+}
 
 // ═══════ CONFIG ═══════
 function renderConfig(){
