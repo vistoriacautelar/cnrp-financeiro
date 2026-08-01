@@ -91,7 +91,8 @@
         .alert-header.danger { background: var(--danger-bg); color: var(--danger-text); }
         .alert-header.warning { background: var(--warning-bg); color: var(--warning-text); }
         
-        .alert-list { display: flex; flex-direction: column; }
+        .alert-list { display: none; flex-direction: column; }
+        .alert-list.open { display: flex; }
         .alert-item { padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
         .alert-item:last-child { border-bottom: none; }
         .alert-item:hover { background: #f8fafc; }
@@ -322,7 +323,7 @@ function addLog(acao,detalhe){
 }
 async function saveDB(logAcao,logDetalhe){
   if(logAcao)addLog(logAcao,logDetalhe);
-  _skipNextSnap=true;
+  _lastSaveTs=Date.now();
   try{await setDoc(DOC_REF,{...DB,updatedAt:new Date().toISOString(),updatedBy:currentUserData?.nome||currentUserData?.email||''},{merge:false});
   document.getElementById('sync-status').innerHTML='<i class="fa-solid fa-cloud-arrow-up"></i> Sincronizado';document.getElementById('sync-status').style.color='#34d399';
   }catch(e){console.error('Save error:',e);
@@ -341,7 +342,7 @@ async function loadVCData(){
 }
 const TIPOS_REL=['Simples','Completo','Sinistro','Nexo Causal'];
 
-let _skipNextSnap=false;
+let _lastSaveTs=0;
 function startSync(){
   unsubSnap=onSnapshot(DOC_REF,(snap)=>{
     if(snap.exists()){
@@ -350,7 +351,8 @@ function startSync(){
       DB.provisoes=d.provisoes||[];DB.veiculos=d.veiculos||[];DB.faturamento=d.faturamento||[];
       DB.precoLitro=d.precoLitro||0;DB.ajudaCustoVeiculo=d.ajudaCustoVeiculo??1000;DB.producao=d.producao||[];DB.valoresRelatorio=d.valoresRelatorio||[];DB.logs=d.logs||[];
       document.getElementById('sync-status').innerHTML='<i class="fa-solid fa-cloud-arrow-up"></i> Sincronizado';document.getElementById('sync-status').style.color='#34d399';
-      if(_skipNextSnap){_skipNextSnap=false;}else{render();}
+      // Skip render if this is our own write (within 3 seconds)
+      if(Date.now()-_lastSaveTs<3000){/* own write, skip render */}else{render();}
     }else{importInitial();}
   },(err)=>{console.error('Snap error:',err);
     document.getElementById('sync-status').innerHTML='<i class="fa-solid fa-cloud-xmark"></i> Offline';});
@@ -499,12 +501,12 @@ function renderPainel(){
   document.getElementById('top-metrics').innerHTML='';
   let h='';
   if(per.length>0){
-    h+=`<div class="alert-group"><div class="alert-header danger" style="cursor:pointer" onclick="const l=this.nextElementSibling;l.style.display=l.style.display==='none'?'flex':'none'"><i class="fa-solid fa-triangle-exclamation"></i> Provisão pendente (${per.length}) <span style="margin-left:auto;font-size:.8rem">${fmt(per.reduce((s,a)=>s+a.valor,0))} <i class="fa-solid fa-chevron-down"></i></span></div><div class="alert-list" style="display:none">`;
+    h+=`<div class="alert-group"><div class="alert-header danger" style="cursor:pointer" onclick="this.nextElementSibling.classList.toggle('open')"><i class="fa-solid fa-triangle-exclamation"></i> Provisão pendente (${per.length}) <span style="margin-left:auto;font-size:.8rem">${fmt(per.reduce((s,a)=>s+a.valor,0))} <i class="fa-solid fa-chevron-down"></i></span></div><div class="alert-list">`;
     per.forEach(a=>{h+=`<div class="alert-item"><div class="alert-info"><h4>${esc(a.nome)}</h4><p>${a.periodo}</p></div><div style="display:flex;align-items:center"><span class="alert-value" style="color:var(--danger-text)">${fmt(a.valor)}</span><button class="btn-primary" style="background:var(--danger);padding:6px 12px;font-size:.8rem" onclick="provM('${a.obId}','${a.pi}','${a.periodo}',${a.valor})">Provisionar</button></div></div>`;});
     h+=`</div></div>`;
   }else{h+=`<div class="alert-group"><div class="alert-header" style="background:var(--success-bg);color:var(--success-text)"><i class="fa-solid fa-check-circle"></i> Provisões em dia</div></div>`;}
   if(prx.length>0){
-    h+=`<div class="alert-group"><div class="alert-header warning" style="cursor:pointer" onclick="const l=this.nextElementSibling;l.style.display=l.style.display==='none'?'flex':'none'"><i class="fa-solid fa-calendar-day"></i> Próximo ciclo (${prx.length}) <span style="margin-left:auto;font-size:.8rem">${fmt(prx.reduce((s,a)=>s+a.valor,0))} <i class="fa-solid fa-chevron-down"></i></span></div><div class="alert-list" style="display:none">`;
+    h+=`<div class="alert-group"><div class="alert-header warning" style="cursor:pointer" onclick="this.nextElementSibling.classList.toggle('open')"><i class="fa-solid fa-calendar-day"></i> Próximo ciclo (${prx.length}) <span style="margin-left:auto;font-size:.8rem">${fmt(prx.reduce((s,a)=>s+a.valor,0))} <i class="fa-solid fa-chevron-down"></i></span></div><div class="alert-list">`;
     prx.forEach(a=>{h+=`<div class="alert-item"><div class="alert-info"><h4>${esc(a.nome)}</h4><p>${a.periodo}</p></div><div style="display:flex;align-items:center"><span class="alert-value" style="color:var(--warning-text)">${fmt(a.valor)}</span><button class="btn-primary" style="background:var(--warning);padding:6px 12px;font-size:.8rem" onclick="provM('${a.obId}','${a.pi}','${a.periodo}',${a.valor})">Provisionar</button></div></div>`;});
     h+=`</div></div>`;
   }
@@ -1075,6 +1077,7 @@ function prodForm(p){
   <div class="row"><div style="flex:1"><label class="lb">Cliente</label><select class="sel" id="pd-cl" onchange="updPdCol()"><option value="">Selecione</option>${clOpts}</select></div>
   <div style="flex:1"><label class="lb">Coletor</label><select class="sel" id="pd-col"><option value="">Todos / Geral</option></select></div></div>
   <div class="row"><div style="flex:1"><label class="lb">Quantidade de vistorias</label><input class="inp" type="number" id="pd-qt" min="1" value="${isEdit?p.quantidade:1}"></div></div>
+  ${!isEdit?`<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:.875rem;cursor:pointer"><input type="checkbox" id="pd-fat" checked> Criar/atualizar faturamento automaticamente</label>`:''}
   <div class="acts">${isEdit?`<button class="btn-danger" onclick="delProducao('${p.id}')" style="margin-right:auto"><i class="fa-solid fa-trash"></i> Excluir</button>`:''}<button class="btn-secondary" onclick="renderProducao()">Cancelar</button><button class="btn-primary" onclick="salvarProducao()"><i class="fa-solid fa-check"></i> ${isEdit?'Atualizar':'Salvar'}</button></div></div>`;
   // Pre-fill coletor if editing
   if(isEdit&&p.clienteId){updPdCol();setTimeout(()=>{const sel=document.getElementById('pd-col');if(sel&&p.coletorId){for(let i=0;i<sel.options.length;i++){if(sel.options[i].value===p.coletorId){sel.selectedIndex=i;break;}}}},100);}
@@ -1109,7 +1112,20 @@ window.salvarProducao=async function(){
     await saveDB('Produção editada',mesRef+' '+clienteNome+' '+qt+'x');
   }else{
     DB.producao.push({id:uid(),...data});
-    await saveDB('Produção lançada',mesRef+' '+clienteNome+' '+qt+'x');
+    // Auto-create or update faturamento
+    const criarFat=document.getElementById('pd-fat')?.checked;
+    if(criarFat){
+      const valorTotal=qt*valorUnit;
+      const fatExistente=DB.faturamento.find(f=>(normCl(f.clienteNorm||f.cliente))===normCl(clienteNome)&&f.mesRef===mesRef);
+      if(fatExistente){
+        // Update existing — add production value
+        fatExistente.valorTotal+=valorTotal;
+      }else{
+        // Create new
+        DB.faturamento.push({id:uid(),cliente:clienteNome,clienteNorm:clienteNome,mesRef,valorTotal,nf:'',envioMedicao:'',emissaoNF:'',prevPagamento:'',dataDeposito:'',status:'Pendente',obs:'',imposto:0,arquivos:[]});
+      }
+    }
+    await saveDB('Produção lançada',mesRef+' '+clienteNome+' '+qt+'x'+(criarFat?' +fat':''));
   }
   window._editProdId='';renderProducao();
 };
@@ -1298,7 +1314,7 @@ window.importarMedicao=function(){
   el.innerHTML=`<div class="fc"><h3 style="margin:0 0 12px;font-size:16px;font-weight:700"><i class="fa-solid fa-file-excel" style="color:#059669"></i> Importar planilha de medição</h3>
   <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:16px">Selecione o cliente e o arquivo XLSX da medição. O sistema vai extrair as frentes de serviço, quantidades e valores automaticamente.</p>
   <div class="row"><div style="flex:1"><label class="lb">Cliente</label><select class="sel" id="imp-cl" onchange="if(window._impData)renderImpPreview()"><option value="">Selecione o cliente</option>${clOpts}</select></div>
-  <div style="flex:1"><label class="lb">Tipo relatório</label><select class="sel" id="imp-tipo">${TIPOS_REL.map(t=>`<option>${t}</option>`).join('')}</select></div></div>
+  <div style="flex:1"><label class="lb">Tipo padrão</label><select class="sel" id="imp-tipo">${TIPOS_REL.map(t=>`<option>${t}</option>`).join('')}</select><span style="font-size:.7rem;color:var(--text-muted)">Auto-detecta pelo preço unitário quando possível</span></div></div>
   <label class="lb">Arquivo XLSX</label>
   <div style="border:2px dashed var(--border);border-radius:8px;padding:24px;text-align:center;cursor:pointer;background:#f8fafc;transition:all .2s" onclick="document.getElementById('imp-file').click()" id="imp-drop">
     <i class="fa-solid fa-cloud-arrow-up" style="font-size:2rem;color:var(--primary);margin-bottom:8px"></i>
@@ -1391,16 +1407,24 @@ window.renderImpPreview=function(){
     <p style="font-size:.85rem;color:var(--text-muted)">${items.length} frentes · ${totalQtd} vistorias · ${fmt(totalVal)}</p></div>`;
     if(nDups>0)prev+=`<p style="font-size:.85rem;color:var(--warning);font-weight:600;margin-bottom:8px"><i class="fa-solid fa-triangle-exclamation"></i> ${nDups} frente(s) já cadastrada(s). Desmarque para não duplicar.</p>`;
     prev+=`<table style="width:100%;border-collapse:collapse;font-size:.85rem">
-    <tr style="background:#f1f5f9"><th style="padding:8px;text-align:center;width:40px">✓</th><th style="padding:8px;text-align:left">Frente de serviço</th><th style="padding:8px;text-align:right">Preço unit.</th><th style="padding:8px;text-align:right">Qtd</th><th style="padding:8px;text-align:right">Valor</th><th style="padding:8px;text-align:center">Status</th></tr>`;
+    <tr style="background:#f1f5f9"><th style="padding:8px;text-align:center;width:36px">✓</th><th style="padding:8px;text-align:left">Frente de serviço</th><th style="padding:8px;text-align:left">Tipo</th><th style="padding:8px;text-align:right">Preço</th><th style="padding:8px;text-align:right">Qtd</th><th style="padding:8px;text-align:right">Valor</th><th style="padding:8px;text-align:center">Status</th></tr>`;
+    // Auto-detect tipo by matching unit price against valoresRelatorio
+    const defaultTipo=document.getElementById('imp-tipo')?.value||'Simples';
     items.forEach((it,i)=>{
+      if(!it._tipo){
+        // Try to match price to a tipo for this client
+        const match=DB.valoresRelatorio.find(v=>v.clienteId===clienteId&&Math.abs(v.valorUnitario-it.preco)<0.01);
+        it._tipo=match?match.tipoRelatorio:defaultTipo;
+      }
       const dupTag=it._dup?`<span style="background:var(--warning-bg);color:var(--warning-text);padding:2px 6px;border-radius:4px;font-size:.7rem;font-weight:600">Duplicado</span>`:`<span style="color:var(--success);font-size:.75rem">Novo</span>`;
       prev+=`<tr style="background:${it._dup?'#fffbeb':i%2?'#f8fafc':'#fff'}"><td style="padding:6px 8px;text-align:center"><input type="checkbox" class="imp-chk" data-idx="${i}"${it._import?' checked':''}></td>
-      <td style="padding:4px 6px"><input class="inp imp-ed-frente" data-idx="${i}" value="${esc(it.frente)}" style="padding:4px 8px;font-size:.85rem" onchange="window._impData.items[${i}].frente=this.value;renderImpPreview()"></td>
-      <td style="padding:4px 6px"><input class="inp imp-ed-preco" data-idx="${i}" value="${it.preco}" style="padding:4px 8px;font-size:.85rem;text-align:right;width:80px" onchange="window._impData.items[${i}].preco=parseFloat(this.value)||0;window._impData.items[${i}].valor=window._impData.items[${i}].preco*window._impData.items[${i}].qtd;renderImpPreview()"></td>
-      <td style="padding:4px 6px"><input class="inp imp-ed-qtd" data-idx="${i}" value="${it.qtd}" type="number" style="padding:4px 8px;font-size:.85rem;text-align:right;width:60px" onchange="window._impData.items[${i}].qtd=parseInt(this.value)||0;window._impData.items[${i}].valor=window._impData.items[${i}].preco*window._impData.items[${i}].qtd;renderImpPreview()"></td>
+      <td style="padding:4px 6px"><input class="inp" data-idx="${i}" value="${esc(it.frente)}" style="padding:4px 8px;font-size:.85rem" onchange="window._impData.items[${i}].frente=this.value;renderImpPreview()"></td>
+      <td style="padding:4px 6px"><select class="sel imp-ed-tipo" data-idx="${i}" style="padding:4px 6px;font-size:.8rem" onchange="window._impData.items[${i}]._tipo=this.value">${TIPOS_REL.map(t=>`<option${it._tipo===t?' selected':''}>${t}</option>`).join('')}</select></td>
+      <td style="padding:4px 6px"><input class="inp" value="${it.preco}" style="padding:4px 8px;font-size:.85rem;text-align:right;width:70px" onchange="window._impData.items[${i}].preco=parseFloat(this.value)||0;window._impData.items[${i}].valor=window._impData.items[${i}].preco*window._impData.items[${i}].qtd;renderImpPreview()"></td>
+      <td style="padding:4px 6px"><input class="inp" value="${it.qtd}" type="number" style="padding:4px 8px;font-size:.85rem;text-align:right;width:55px" onchange="window._impData.items[${i}].qtd=parseInt(this.value)||0;window._impData.items[${i}].valor=window._impData.items[${i}].preco*window._impData.items[${i}].qtd;renderImpPreview()"></td>
       <td style="padding:6px 8px;text-align:right;font-weight:600">${fmt(it.valor)}</td><td style="padding:6px 8px;text-align:center">${dupTag}</td></tr>`;
     });
-    prev+=`<tr style="background:#e2e8f0;font-weight:700"><td style="padding:8px"></td><td colspan="2" style="padding:8px">TOTAL</td><td style="padding:8px;text-align:right">${totalQtd}</td><td style="padding:8px;text-align:right">${fmt(totalVal)}</td><td></td></tr></table>`;
+    prev+=`<tr style="background:#e2e8f0;font-weight:700"><td style="padding:8px"></td><td colspan="3" style="padding:8px">TOTAL</td><td style="padding:8px;text-align:right">${totalQtd}</td><td style="padding:8px;text-align:right">${fmt(totalVal)}</td><td></td></tr></table>`;
 
     const fatDup=DB.faturamento.some(f=>(f.clienteNorm||f.cliente)===document.getElementById('imp-cl').selectedOptions[0]?.textContent&&f.mesRef===mesRef);
     prev+=`<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:.875rem;cursor:pointer"><input type="checkbox" id="imp-fat"${fatDup?'':' checked'}> Criar registro de faturamento (${fmt(totalVal)})${fatDup?' <span style="color:var(--warning);font-weight:600">⚠️ já existe faturamento para este cliente/mês</span>':''}</label>`;
@@ -1425,16 +1449,14 @@ window.confirmarImport=async function(){
 
   if(!toImport.length)return alert('Nenhum item selecionado para importar');
 
-  const vr=DB.valoresRelatorio.find(v=>v.clienteId===clienteId&&v.tipoRelatorio===tipo);
-  const valorUnit=vr?vr.valorUnitario:0;
-
   let importedQtd=0;
   toImport.forEach(it=>{
+    const itemTipo=it._tipo||tipo;
     const col=vcColetores.find(c=>c.clienteId===clienteId&&c.nome.toLowerCase()===it.frente.toLowerCase());
     DB.producao.push({
-      id:uid(),mesRef,tipoRelatorio:tipo,clienteId,clienteNome,
+      id:uid(),mesRef,tipoRelatorio:itemTipo,clienteId,clienteNome,
       coletorId:col?col.id:'',coletorNome:it.frente,
-      quantidade:it.qtd,valorUnitario:it.preco||valorUnit
+      quantidade:it.qtd,valorUnitario:it.preco
     });
     importedQtd+=it.qtd;
   });
