@@ -322,6 +322,7 @@ function addLog(acao,detalhe){
 }
 async function saveDB(logAcao,logDetalhe){
   if(logAcao)addLog(logAcao,logDetalhe);
+  _skipNextSnap=true;
   try{await setDoc(DOC_REF,{...DB,updatedAt:new Date().toISOString(),updatedBy:currentUserData?.nome||currentUserData?.email||''},{merge:false});
   document.getElementById('sync-status').innerHTML='<i class="fa-solid fa-cloud-arrow-up"></i> Sincronizado';document.getElementById('sync-status').style.color='#34d399';
   }catch(e){console.error('Save error:',e);
@@ -340,6 +341,7 @@ async function loadVCData(){
 }
 const TIPOS_REL=['Simples','Completo','Sinistro','Nexo Causal'];
 
+let _skipNextSnap=false;
 function startSync(){
   unsubSnap=onSnapshot(DOC_REF,(snap)=>{
     if(snap.exists()){
@@ -348,7 +350,7 @@ function startSync(){
       DB.provisoes=d.provisoes||[];DB.veiculos=d.veiculos||[];DB.faturamento=d.faturamento||[];
       DB.precoLitro=d.precoLitro||0;DB.ajudaCustoVeiculo=d.ajudaCustoVeiculo??1000;DB.producao=d.producao||[];DB.valoresRelatorio=d.valoresRelatorio||[];DB.logs=d.logs||[];
       document.getElementById('sync-status').innerHTML='<i class="fa-solid fa-cloud-arrow-up"></i> Sincronizado';document.getElementById('sync-status').style.color='#34d399';
-      render();
+      if(_skipNextSnap){_skipNextSnap=false;}else{render();}
     }else{importInitial();}
   },(err)=>{console.error('Snap error:',err);
     document.getElementById('sync-status').innerHTML='<i class="fa-solid fa-cloud-xmark"></i> Offline';});
@@ -497,12 +499,12 @@ function renderPainel(){
   document.getElementById('top-metrics').innerHTML='';
   let h='';
   if(per.length>0){
-    h+=`<div class="alert-group"><div class="alert-header danger"><i class="fa-solid fa-triangle-exclamation"></i> Provisão pendente (${per.length})</div><div class="alert-list">`;
+    h+=`<div class="alert-group"><div class="alert-header danger" style="cursor:pointer" onclick="const l=this.nextElementSibling;l.style.display=l.style.display==='none'?'flex':'none'"><i class="fa-solid fa-triangle-exclamation"></i> Provisão pendente (${per.length}) <span style="margin-left:auto;font-size:.8rem">${fmt(per.reduce((s,a)=>s+a.valor,0))} <i class="fa-solid fa-chevron-down"></i></span></div><div class="alert-list" style="display:none">`;
     per.forEach(a=>{h+=`<div class="alert-item"><div class="alert-info"><h4>${esc(a.nome)}</h4><p>${a.periodo}</p></div><div style="display:flex;align-items:center"><span class="alert-value" style="color:var(--danger-text)">${fmt(a.valor)}</span><button class="btn-primary" style="background:var(--danger);padding:6px 12px;font-size:.8rem" onclick="provM('${a.obId}','${a.pi}','${a.periodo}',${a.valor})">Provisionar</button></div></div>`;});
     h+=`</div></div>`;
   }else{h+=`<div class="alert-group"><div class="alert-header" style="background:var(--success-bg);color:var(--success-text)"><i class="fa-solid fa-check-circle"></i> Provisões em dia</div></div>`;}
   if(prx.length>0){
-    h+=`<div class="alert-group"><div class="alert-header warning"><i class="fa-solid fa-calendar-day"></i> Próximo ciclo (${prx.length})</div><div class="alert-list">`;
+    h+=`<div class="alert-group"><div class="alert-header warning" style="cursor:pointer" onclick="const l=this.nextElementSibling;l.style.display=l.style.display==='none'?'flex':'none'"><i class="fa-solid fa-calendar-day"></i> Próximo ciclo (${prx.length}) <span style="margin-left:auto;font-size:.8rem">${fmt(prx.reduce((s,a)=>s+a.valor,0))} <i class="fa-solid fa-chevron-down"></i></span></div><div class="alert-list" style="display:none">`;
     prx.forEach(a=>{h+=`<div class="alert-item"><div class="alert-info"><h4>${esc(a.nome)}</h4><p>${a.periodo}</p></div><div style="display:flex;align-items:center"><span class="alert-value" style="color:var(--warning-text)">${fmt(a.valor)}</span><button class="btn-primary" style="background:var(--warning);padding:6px 12px;font-size:.8rem" onclick="provM('${a.obId}','${a.pi}','${a.periodo}',${a.valor})">Provisionar</button></div></div>`;});
     h+=`</div></div>`;
   }
