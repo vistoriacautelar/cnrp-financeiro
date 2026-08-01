@@ -563,7 +563,12 @@ function renderFatCard(f){
 
     // ══ Expandable detail panel ══
     h+=`<div id="det-${f.id}" style="display:none" onclick="event.stopPropagation()">
-    <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:8px">`;
+    <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:8px">
+    <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
+    <button class="btn-primary" style="padding:6px 12px;font-size:.8rem" onclick="addSaidaFromFat('${cl}','${medId||''}','${esc(f.mesRef)}')"><i class="fa-solid fa-car"></i> + Saída</button>
+    <button class="btn-secondary" style="padding:6px 12px;font-size:.8rem" onclick="addDGFromFat('${cl}','${medId||''}','${esc(f.mesRef)}')"><i class="fa-solid fa-receipt"></i> + Despesa</button>
+    <button class="btn-secondary" style="padding:6px 12px;font-size:.8rem;background:#8b5cf6" onclick="addMOFromFat('${cl}','${medId||''}','${esc(f.mesRef)}')"><i class="fa-solid fa-helmet-safety"></i> + Mão de obra</button>
+    </div>`;
 
     // Saídas de campo
     if(ss.length){
@@ -1922,6 +1927,57 @@ window.salvarColab=async function(editId){
   await saveDB('Colaborador '+(editId?'editado':'criado'),d.nome);closeModal();renderConfig();
 };
 window.delColab=async function(id){if(confirm('Excluir?')){DB.colaboradores=DB.colaboradores.filter(x=>x.id!==id);await saveDB('Colaborador excluído','');closeModal();renderConfig();}};
+
+// Add expenses from within faturamento detail
+window.addSaidaFromFat=function(cl,medId,mesRef){
+  const locais=[...new Set(DB.saidas.map(s=>s.local).filter(Boolean))].sort();
+  const mids=DB.medicoes.filter(m=>matchCl(m.consorcio,cl)).map(m=>m.id);
+  const locaisCli=[...new Set(DB.saidas.filter(s=>mids.includes(s.medicaoId)).map(s=>s.local).filter(Boolean))].sort();
+  document.getElementById('modal-container').innerHTML=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:600px">
+  <h3 style="font-size:1rem;font-weight:700;margin-bottom:4px"><i class="fa-solid fa-car"></i> Nova saída — ${esc(cl)}</h3>
+  <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:12px">${esc(mesRef)}</p>
+  <div class="row"><div style="flex:1"><label class="lb">Data</label><input class="inp" type="date" id="mf-d"></div><div style="flex:1"><label class="lb">Quem pagou</label><select class="sel" id="mf-q"><option>Tatiana</option><option>Ronaldo</option></select></div></div>
+  <label class="lb">Local</label><input class="inp" id="mf-l" list="dl-mf" autocomplete="off"><datalist id="dl-mf">${locais.map(l=>`<option value="${esc(l)}">`).join('')}</datalist>
+  ${locaisCli.length?`<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">${locaisCli.map(l=>`<button type="button" style="padding:3px 8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:.8rem;color:var(--primary);cursor:pointer" onclick="document.getElementById('mf-l').value='${esc(l)}'">${esc(l)}</button>`).join('')}</div>`:''}
+  <div class="row" style="margin-top:8px"><div style="flex:1"><label class="lb">🚗 Veículo</label><select class="sel" id="mf-vc">${DB.veiculos.map((v,i)=>`<option value="${v.id}"${i===0?' selected':''}>${esc(v.nome)}</option>`).join('')}</select></div>
+  <div style="flex:1"><label class="lb">📏 KM</label><input class="inp" type="number" id="mf-km" min="0"></div>
+  <div style="flex:1"><label class="lb">🛣️ Pedágio</label><input class="inp" id="mf-p" inputmode="decimal"></div>
+  <div style="flex:1"><label class="lb">🍽️ Refeição</label><input class="inp" id="mf-r" inputmode="decimal"></div></div>
+  ${DB.colaboradores.length?`<label class="lb">Colaboradores</label><div style="display:flex;flex-wrap:wrap;gap:6px">${DB.colaboradores.map(cb=>`<label style="display:flex;align-items:center;gap:4px;padding:4px 8px;background:#f8fafc;border:1px solid var(--border);border-radius:6px;font-size:.8rem;cursor:pointer"><input type="checkbox" class="mf-colab" value="${cb.id}"> ${esc(cb.nome)}</label>`).join('')}</div>`:''}
+  <div class="acts"><button class="btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="saveSaidaFromFat('${esc(cl)}','${medId}')"><i class="fa-solid fa-check"></i> Salvar</button></div></div></div>`;
+};
+window.saveSaidaFromFat=async function(cl,medId){
+  const vcId=document.getElementById('mf-vc')?.value||'';const km=parseFloat(document.getElementById('mf-km')?.value)||0;
+  const colabIds=[...document.querySelectorAll('.mf-colab:checked')].map(x=>x.value);
+  const e={id:uid(),data:document.getElementById('mf-d').value,local:document.getElementById('mf-l').value,veiculoId:vcId,km,valorLitro:DB.precoLitro,combManual:0,pedagio:parseBRL(document.getElementById('mf-p').value),refeicao:parseBRL(document.getElementById('mf-r').value),outros:0,outrosDesc:'',quemPagou:document.getElementById('mf-q').value,medicaoId:medId,obs:'',reembolsado:true,colaboradores:colabIds};
+  if(!e.data||!e.local)return alert('Preencha data e local');DB.saidas.push(e);
+  const med=DB.medicoes.find(m=>m.id===medId);
+  colabIds.forEach(cbId=>{const cb=DB.colaboradores.find(x=>x.id===cbId);if(!cb)return;DB.maoDeObra.push({id:uid(),data:e.data,clienteNome:cl,medicaoId:medId,mesRef:med?med.mesRef:'',nome:cb.nome,funcao:cb.funcao,valor:(cb.valorDia||0)+(cb.conducao||0),quemPagou:cb.quemPaga||'Tatiana',autoGerado:true,saidaId:e.id});});
+  await saveDB('Saída criada (fat)',e.local);closeModal();renderFat();
+};
+window.addDGFromFat=function(cl,medId,mesRef){
+  document.getElementById('modal-container').innerHTML=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:500px">
+  <h3 style="font-size:1rem;font-weight:700;margin-bottom:4px"><i class="fa-solid fa-receipt"></i> Nova despesa — ${esc(cl)}</h3><p style="font-size:.85rem;color:var(--text-muted);margin-bottom:12px">${esc(mesRef)}</p>
+  <div class="row"><div style="flex:1"><label class="lb">Data</label><input class="inp" type="date" id="mf-dgd"></div><div style="flex:1"><label class="lb">Valor</label><input class="inp" id="mf-dgv" inputmode="decimal"></div><div style="flex:1"><label class="lb">Quem pagou</label><select class="sel" id="mf-dgq"><option>Tatiana</option><option>Ronaldo</option><option>Medição</option></select></div></div>
+  <label class="lb">Descrição</label><input class="inp" id="mf-dgdesc">
+  <div class="acts"><button class="btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="saveDGFromFat('${esc(cl)}','${medId}','${esc(mesRef)}')"><i class="fa-solid fa-check"></i> Salvar</button></div></div></div>`;
+};
+window.saveDGFromFat=async function(cl,medId,mesRef){
+  const d={id:uid(),data:document.getElementById('mf-dgd').value,clienteNome:cl,medicaoId:medId,mesRef,descricao:document.getElementById('mf-dgdesc').value,valor:parseBRL(document.getElementById('mf-dgv').value),quemPagou:document.getElementById('mf-dgq').value};
+  if(!d.data)return alert('Preencha a data');DB.despesasGerais.push(d);await saveDB('Despesa geral (fat)',d.descricao);closeModal();renderFat();
+};
+window.addMOFromFat=function(cl,medId,mesRef){
+  document.getElementById('modal-container').innerHTML=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:500px">
+  <h3 style="font-size:1rem;font-weight:700;margin-bottom:4px"><i class="fa-solid fa-helmet-safety"></i> Nova mão de obra — ${esc(cl)}</h3><p style="font-size:.85rem;color:var(--text-muted);margin-bottom:12px">${esc(mesRef)}</p>
+  <div class="row"><div style="flex:1"><label class="lb">Nome</label><input class="inp" id="mf-mon"></div><div style="flex:1"><label class="lb">Função</label><input class="inp" id="mf-mof"></div></div>
+  <div class="row"><div style="flex:1"><label class="lb">Data</label><input class="inp" type="date" id="mf-mod"></div><div style="flex:1"><label class="lb">Valor</label><input class="inp" id="mf-mov" inputmode="decimal" placeholder="0 = vol."></div><div style="flex:1"><label class="lb">Quem paga</label><select class="sel" id="mf-moq"><option>Tatiana</option><option>Ronaldo</option><option>Medição</option><option>Ninguém</option></select></div></div>
+  ${DB.colaboradores.length?`<label class="lb">Selecionar cadastrado</label><div style="display:flex;flex-wrap:wrap;gap:4px">${DB.colaboradores.map(cb=>`<button type="button" style="padding:4px 10px;background:#f8fafc;border:1px solid var(--border);border-radius:6px;font-size:.8rem;cursor:pointer" onclick="document.getElementById('mf-mon').value='${esc(cb.nome)}';document.getElementById('mf-mof').value='${esc(cb.funcao)}';document.getElementById('mf-mov').value='${((cb.valorDia||0)+(cb.conducao||0)).toFixed(2).replace('.',',')}';document.getElementById('mf-moq').value='${cb.quemPaga||'Tatiana'}'">${esc(cb.nome)}</button>`).join('')}</div>`:''}
+  <div class="acts"><button class="btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="saveMOFromFat('${esc(cl)}','${medId}','${esc(mesRef)}')"><i class="fa-solid fa-check"></i> Salvar</button></div></div></div>`;
+};
+window.saveMOFromFat=async function(cl,medId,mesRef){
+  const d={id:uid(),data:document.getElementById('mf-mod').value,clienteNome:cl,medicaoId:medId,mesRef,nome:document.getElementById('mf-mon').value,funcao:document.getElementById('mf-mof').value,valor:parseBRL(document.getElementById('mf-mov').value),quemPagou:document.getElementById('mf-moq').value};
+  if(!d.nome)return alert('Preencha o nome');DB.maoDeObra.push(d);await saveDB('Mão de obra (fat)',d.nome);closeModal();renderFat();
+};
 
 window.editSaidaColabs=function(saidaId){
   const sd=DB.saidas.find(x=>x.id===saidaId);if(!sd)return;
