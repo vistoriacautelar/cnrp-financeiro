@@ -618,7 +618,7 @@ window.toggleFat=async function(id){const _f=DB.faturamento.find(f=>f.id===id);c
   await saveDB('Status faturamento',(_f?.mesRef||'')+' → '+_ns);
   // Restore state after render
   setTimeout(()=>{_open.forEach(name=>{document.querySelectorAll('.client-name').forEach(el=>{if(el.textContent===name)el.closest('details')?.setAttribute('open','');});});document.querySelector('.main-content').scrollTop=_scroll;},50);};
-window.delFatEntry=async function(id){if(confirm('Excluir este faturamento?')){DB.faturamento=DB.faturamento.filter(f=>f.id!==id);await saveDB();}};
+window.delFatEntry=async function(id){if(confirm('Excluir este faturamento?')){DB.faturamento=DB.faturamento.filter(f=>f.id!==id);await saveDB('Faturamento excluído',id);renderFat();}};
 function fatForm(f){
   const isEdit=!!f;const title=isEdit?'Editar faturamento':'Novo faturamento';
   const clientes=CLIENTES;
@@ -640,8 +640,8 @@ window.salvarFat=async function(editId){
     emissaoNF:document.getElementById('ff-em').value,prevPagamento:document.getElementById('ff-pp').value,dataDeposito:document.getElementById('ff-dp')?.value||'',
     status:document.getElementById('ff-st').value,obs:document.getElementById('ff-obs').value,imposto:parseBRL(document.getElementById('ff-imp')?.value)};
   if(!data.mesRef||!data.valorTotal)return alert('Preencha mês e valor');
-  if(editId){DB.faturamento=DB.faturamento.map(f=>f.id===editId?{...f,...data}:f);await saveDB('Faturamento editado',data.mesRef+' '+data.cliente);}
-  else{DB.faturamento.push({id:uid(),...data,arquivos:[]});await saveDB('Faturamento criado',data.mesRef+' '+data.cliente);}
+  if(editId){DB.faturamento=DB.faturamento.map(f=>f.id===editId?{...f,...data}:f);await saveDB('Faturamento editado',data.mesRef+' '+data.cliente);renderFat();}
+  else{DB.faturamento.push({id:uid(),...data,arquivos:[]});await saveDB('Faturamento criado',data.mesRef+' '+data.cliente);renderFat();}
 };
 
 // ═══════ RESUMO (estilo planilha Excel) ═══════
@@ -782,7 +782,7 @@ function renderSaidas(){
   const el=document.getElementById('tab-saidas');
   const clientes=[...new Set(DB.medicoes.map(m=>normCl(m.consorcio)))].sort();
   const mesesDoCliente=window.sfCliente?DB.medicoes.filter(m=>normCl(m.consorcio)===window.sfCliente).sort((a,b)=>mesOrder(b.mesRef)-mesOrder(a.mesRef)):[];
-  document.getElementById('top-metrics').innerHTML=`<button class="btn-primary" onclick="novaSaida()"><i class="fa-solid fa-plus"></i> Nova saída</button>`;
+  document.getElementById('top-metrics').innerHTML=`<button class="btn-danger" id="btn-del-saidas" style="display:none;margin-right:8px" onclick="delSelectedSaidas()"><i class="fa-solid fa-trash"></i> Excluir selecionados</button><button class="btn-primary" onclick="novaSaida()"><i class="fa-solid fa-plus"></i> Nova saída</button>`;
   const fl=DB.saidas.filter(x=>{
     if(!window.sfCliente&&!window.sfMed)return true;
     if(window.sfMed)return x.medicaoId===window.sfMed;
@@ -793,7 +793,7 @@ function renderSaidas(){
   let h=`<div class="filters-row"><select class="filter-input" style="flex:1" onchange="window.sfCliente=this.value;window.sfMed='';renderSaidas()"><option value="">Todos os clientes</option>${clientes.map(c=>`<option value="${esc(c)}"${window.sfCliente===c?' selected':''}>${esc(c)}</option>`).join('')}</select>
   <select class="filter-input" style="flex:1" onchange="window.sfMed=this.value;renderSaidas()"${!window.sfCliente?' disabled':''}><option value="">Todas as medições</option>${mesesDoCliente.map(m=>`<option value="${m.id}"${window.sfMed===m.id?' selected':''}>${esc(m.mesRef)}</option>`).join('')}</select></div>`;
   h+=`<div class="total-banner"><div><span class="lbl">${fl.length} saídas</span></div><div><span class="val">${fmt(tF)}</span></div></div>`;
-  h+=`<div class="data-list">`;
+  h+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><label style="display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer"><input type="checkbox" onchange="document.querySelectorAll('.chk-saida').forEach(x=>x.checked=this.checked);updDelBtn('saidas')"> Selecionar todos</label></div><div class="data-list">`;
   fl.slice(0,60).forEach(sd=>{const tot=getTot(sd);const v=DB.veiculos.find(x=>x.id===sd.veiculoId);const comb=v?calcComb(sd.km,v.kml,sd.valorLitro):(sd.combManual||0);
     const medNm=sd.medicaoId?DB.medicoes.find(m=>m.id===sd.medicaoId):null;
     h+=`<div class="data-row"><div class="data-col-main"><div class="data-row-title"><span class="tag-user">${esc(sd.quemPagou||'Tatiana')}</span> ${fmtD(sd.data)}</div>
@@ -834,9 +834,9 @@ window.salvarSd=async function(){
   const e={id:uid(),data:document.getElementById('sf-d').value,local:document.getElementById('sf-l').value,veiculoId:'',km:0,valorLitro:0,
     combManual:parseBRL(document.getElementById('sf-c').value),pedagio:parseBRL(document.getElementById('sf-p').value),refeicao:parseBRL(document.getElementById('sf-r').value),
     outros:0,outrosDesc:'',quemPagou:document.getElementById('sf-q').value,medicaoId:document.getElementById('sf-m').value,obs:'',reembolsado:true};
-  if(!e.data||!e.local)return alert('Preencha data e local');DB.saidas.push(e);await saveDB('Saída criada',e.local+' '+e.data);
+  if(!e.data||!e.local)return alert('Preencha data e local');DB.saidas.push(e);await saveDB('Saída criada',e.local+' '+e.data);renderSaidas();
 };
-window.delSd=async function(id){if(confirm('Excluir esta saída?')){DB.saidas=DB.saidas.filter(x=>x.id!==id);await saveDB('Saída excluída',id);}};
+window.delSd=async function(id){if(confirm('Excluir esta saída?')){DB.saidas=DB.saidas.filter(x=>x.id!==id);await saveDB('Saída excluída',id);renderSaidas();}};
 
 // ═══════ FIXOS ═══════
 function renderFixos(){
@@ -875,9 +875,9 @@ window.novaOb=function(){document.getElementById('tab-fixos').innerHTML=`<div cl
   <div class="row"><div style="flex:1"><label class="lb">Valor/mês</label><input class="inp" id="of-v"></div><div style="flex:1"><label class="lb">Parcelas</label><input class="inp" type="number" id="of-pc" placeholder="0 = indefinido" min="0"></div></div>
   <div class="row"><div style="flex:1"><label class="lb">Início</label><input class="inp" type="date" id="of-d"></div><div style="flex:1"><label class="lb">Desc</label><input class="inp" id="of-ds"></div></div>
 <div class="acts"><button class="btn-secondary" onclick="renderFixos()">Cancelar</button><button class="btn-primary" onclick="salvarOb()">Salvar</button></div></div>`;};
-window.salvarOb=async function(){const o={id:uid(),nome:document.getElementById('of-n').value,valor:parseBRL(document.getElementById('of-v').value),dataInicio:document.getElementById('of-d').value,ativo:true,desc:document.getElementById('of-ds').value,tipo:document.getElementById('of-t').value,totalParcelas:parseInt(document.getElementById('of-pc').value)||0};if(!o.nome||!o.dataInicio||o.valor<=0)return alert('Preencha');DB.obrigacoes.push(o);await saveDB('Previsão criada',o.nome);};
-window.delOb=async function(id){if(confirm('Excluir?')){DB.obrigacoes=DB.obrigacoes.filter(x=>x.id!==id);await saveDB('Previsão excluída',id);}};
-window.delProv=async function(id){if(confirm('Excluir esta provisão?')){DB.provisoes=DB.provisoes.filter(x=>x.id!==id);await saveDB();}};
+window.salvarOb=async function(){const o={id:uid(),nome:document.getElementById('of-n').value,valor:parseBRL(document.getElementById('of-v').value),dataInicio:document.getElementById('of-d').value,ativo:true,desc:document.getElementById('of-ds').value,tipo:document.getElementById('of-t').value,totalParcelas:parseInt(document.getElementById('of-pc').value)||0};if(!o.nome||!o.dataInicio||o.valor<=0)return alert('Preencha');DB.obrigacoes.push(o);await saveDB('Previsão criada',o.nome);renderFixos();};
+window.delOb=async function(id){if(confirm('Excluir?')){DB.obrigacoes=DB.obrigacoes.filter(x=>x.id!==id);await saveDB('Previsão excluída',id);renderFixos();}};
+window.delProv=async function(id){if(confirm('Excluir esta provisão?')){DB.provisoes=DB.provisoes.filter(x=>x.id!==id);await saveDB('Provisão excluída','');renderFixos();}};
 window.editProvReal=function(id){
   const p=DB.provisoes.find(x=>x.id===id);if(!p)return;
   const ob=DB.obrigacoes.find(o=>o.id===p.obrigacaoId);
@@ -909,7 +909,7 @@ window.salvarPr=async function(){const obId=document.getElementById('pf-o').valu
   const totalParc=ob.totalParcelas||0;const endDate=totalParc>0?(()=>{const d=new Date(ob.dataInicio+'T12:00:00');d.setMonth(d.getMonth()+totalParc);return d.toISOString().slice(0,10);})():'2027-12-31';
   const ps=getPeriodos(ob.dataInicio,endDate);const p=ps.find(x=>x.inicio===per);
   if(totalParc>0&&DB.provisoes.filter(pv=>pv.obrigacaoId===obId).length>=totalParc)return alert('Todas as parcelas já foram provisionadas');
-  DB.provisoes.push({id:uid(),obrigacaoId:obId,periodoInicio:per,periodo:p?.label||'',valor:parseBRL(document.getElementById('pf-v').value),ref:document.getElementById('pf-r').value||'Manual',dt:new Date().toISOString()});await saveDB('Provisão lançada',per);};
+  DB.provisoes.push({id:uid(),obrigacaoId:obId,periodoInicio:per,periodo:p?.label||'',valor:parseBRL(document.getElementById('pf-v').value),ref:document.getElementById('pf-r').value||'Manual',dt:new Date().toISOString()});await saveDB('Provisão lançada',per);renderFixos();};
 
 // ═══════ CLIENTES ═══════
 window.clDetId='';
@@ -1012,7 +1012,7 @@ function renderClienteDetalhe(el,clId){
 // ═══════ PRODUÇÃO ═══════
 function renderProducao(){
   const el=document.getElementById('tab-producao');
-  document.getElementById('top-metrics').innerHTML=`<button class="btn-secondary" onclick="importarMedicao()" style="margin-right:8px"><i class="fa-solid fa-file-excel"></i> Importar planilha</button><button class="btn-secondary" onclick="editValores()" style="margin-right:8px"><i class="fa-solid fa-dollar-sign"></i> Valores</button><button class="btn-primary" onclick="novaProducao()"><i class="fa-solid fa-plus"></i> Lançar</button>`;
+  document.getElementById('top-metrics').innerHTML=`<button class="btn-danger" id="btn-del-prod" style="display:none;margin-right:8px" onclick="delSelectedProd()"><i class="fa-solid fa-trash"></i> Excluir selecionados</button><button class="btn-secondary" onclick="importarMedicao()" style="margin-right:8px"><i class="fa-solid fa-file-excel"></i> Importar planilha</button><button class="btn-secondary" onclick="editValores()" style="margin-right:8px"><i class="fa-solid fa-dollar-sign"></i> Valores</button><button class="btn-primary" onclick="novaProducao()"><i class="fa-solid fa-plus"></i> Lançar</button>`;
   const totalVist=DB.producao.reduce((s,p)=>s+p.quantidade,0);
   const totalValor=DB.producao.reduce((s,p)=>s+p.quantidade*(p.valorUnitario||0),0);
 
@@ -1130,7 +1130,7 @@ window.salvarProducao=async function(){
   window._editProdId='';renderProducao();
 };
 
-window.delProducao=async function(id){if(confirm('Excluir?')){DB.producao=DB.producao.filter(x=>x.id!==id);await saveDB();}};
+window.delProducao=async function(id){if(confirm('Excluir?')){DB.producao=DB.producao.filter(x=>x.id!==id);await saveDB('Produção excluída','');renderProducao();}};
 
 window.editValores=function(){
   const el=document.getElementById('tab-producao');
@@ -1405,9 +1405,9 @@ window.renderImpPreview=function(){
     let prev=`<div class="report-section"><h3 style="font-weight:700;margin-bottom:8px"><i class="fa-solid fa-eye"></i> Pré-visualização</h3>
     <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:12px"><div style="flex:0 0 200px"><label class="lb">Mês / Ano</label><input class="inp" id="imp-mesref" value="${esc(mesRef)}" onchange="window._impData.mesRef=this.value;renderImpPreview()"></div>
     <p style="font-size:.85rem;color:var(--text-muted)">${items.length} frentes · ${totalQtd} vistorias · ${fmt(totalVal)}</p></div>`;
-    if(nDups>0)prev+=`<p style="font-size:.85rem;color:var(--warning);font-weight:600;margin-bottom:8px"><i class="fa-solid fa-triangle-exclamation"></i> ${nDups} frente(s) já cadastrada(s). Desmarque para não duplicar.</p>`;
+
     prev+=`<table style="width:100%;border-collapse:collapse;font-size:.85rem">
-    <tr style="background:#f1f5f9"><th style="padding:8px;text-align:center;width:36px">✓</th><th style="padding:8px;text-align:left">Frente de serviço</th><th style="padding:8px;text-align:left">Tipo</th><th style="padding:8px;text-align:right">Preço</th><th style="padding:8px;text-align:right">Qtd</th><th style="padding:8px;text-align:right">Valor</th><th style="padding:8px;text-align:center">Status</th></tr>`;
+    <tr style="background:#f1f5f9"><th style="padding:8px;text-align:center;width:36px">✓</th><th style="padding:8px;text-align:left">Frente de serviço</th><th style="padding:8px;text-align:left">Tipo</th><th style="padding:8px;text-align:right">Preço</th><th style="padding:8px;text-align:right">Qtd</th><th style="padding:8px;text-align:right">Valor</th></tr>`;
     // Auto-detect tipo by matching unit price against valoresRelatorio
     const defaultTipo=document.getElementById('imp-tipo')?.value||'Simples';
     items.forEach((it,i)=>{
@@ -1416,8 +1416,7 @@ window.renderImpPreview=function(){
         const match=DB.valoresRelatorio.find(v=>v.clienteId===clienteId&&Math.abs(v.valorUnitario-it.preco)<0.01);
         it._tipo=match?match.tipoRelatorio:defaultTipo;
       }
-      const dupTag=it._dup?`<span style="background:var(--warning-bg);color:var(--warning-text);padding:2px 6px;border-radius:4px;font-size:.7rem;font-weight:600">Duplicado</span>`:`<span style="color:var(--success);font-size:.75rem">Novo</span>`;
-      prev+=`<tr style="background:${it._dup?'#fffbeb':i%2?'#f8fafc':'#fff'}"><td style="padding:6px 8px;text-align:center"><input type="checkbox" class="imp-chk" data-idx="${i}"${it._import?' checked':''}></td>
+      prev+=`<tr style="background:${i%2?'#f8fafc':'#fff'}"><td style="padding:6px 8px;text-align:center"><input type="checkbox" class="imp-chk" data-idx="${i}"${it._import?' checked':''}></td>
       <td style="padding:4px 6px"><input class="inp" data-idx="${i}" value="${esc(it.frente)}" style="padding:4px 8px;font-size:.85rem" onchange="window._impData.items[${i}].frente=this.value;renderImpPreview()"></td>
       <td style="padding:4px 6px"><select class="sel imp-ed-tipo" data-idx="${i}" style="padding:4px 6px;font-size:.8rem" onchange="window._impData.items[${i}]._tipo=this.value">${TIPOS_REL.map(t=>`<option${it._tipo===t?' selected':''}>${t}</option>`).join('')}</select></td>
       <td style="padding:4px 6px"><input class="inp" value="${it.preco}" style="padding:4px 8px;font-size:.85rem;text-align:right;width:70px" onchange="window._impData.items[${i}].preco=parseFloat(this.value)||0;window._impData.items[${i}].valor=window._impData.items[${i}].preco*window._impData.items[${i}].qtd;renderImpPreview()"></td>
@@ -1472,6 +1471,29 @@ window.confirmarImport=async function(){
   renderProducao();
 };
 
+
+// ═══════ MULTI-DELETE ═══════
+window.updDelBtn=function(type){
+  const chks=document.querySelectorAll('.chk-'+type+':checked');
+  const btn=document.getElementById('btn-del-'+type);
+  if(btn)btn.style.display=chks.length>0?'inline-flex':'none';
+  if(btn&&chks.length>0)btn.innerHTML=`<i class="fa-solid fa-trash"></i> Excluir ${chks.length} selecionado(s)`;
+};
+window.delSelectedSaidas=async function(){
+  const ids=[...document.querySelectorAll('.chk-saida:checked')].map(x=>x.value);
+  if(!ids.length)return;
+  if(!confirm(`Excluir ${ids.length} saída(s)?`))return;
+  DB.saidas=DB.saidas.filter(x=>!ids.includes(x.id));
+  await saveDB('Saídas excluídas (lote)',ids.length+' itens');renderSaidas();
+};
+window.delSelectedProd=async function(){
+  const ids=[...document.querySelectorAll('.chk-prod:checked')].map(x=>x.value);
+  if(!ids.length)return;
+  if(!confirm(`Excluir ${ids.length} registro(s) de produção?`))return;
+  DB.producao=DB.producao.filter(x=>!ids.includes(x.id));
+  await saveDB('Produção excluída (lote)',ids.length+' itens');renderProducao();
+};
+
 // ═══════ CONFIG ═══════
 function renderConfig(){
   const el=document.getElementById('tab-config');
@@ -1523,13 +1545,13 @@ window.salvarCfgValores=async function(){
   await saveDB();
 };
 window.editPreco=function(){document.getElementById('pf-pc').innerHTML=`<div style="margin-top:8px;display:flex;gap:6px;align-items:flex-end"><div style="flex:1"><label class="lb">R$/litro</label><input class="inp" id="cp-v" value="${DB.precoLitro?DB.precoLitro.toFixed(2).replace('.',','):''}"></div><button class="btn-secondary" onclick="savePrc()">Salvar</button></div>`;};
-window.savePrc=async function(){DB.precoLitro=parseBRL(document.getElementById('cp-v').value);await saveDB();};
+window.savePrc=async function(){DB.precoLitro=parseBRL(document.getElementById('cp-v').value);await saveDB('Preço litro alterado','');renderConfig();};
 window.editAjuda=function(){document.getElementById('pf-aj').innerHTML=`<div style="margin-top:8px;display:flex;gap:6px;align-items:flex-end"><div style="flex:1"><label class="lb">R$/mês</label><input class="inp" id="ca-v" value="${DB.ajudaCustoVeiculo?DB.ajudaCustoVeiculo.toFixed(2).replace('.',','):''}"></div><button class="btn-secondary" onclick="saveAj()">Salvar</button></div>`;};
-window.saveAj=async function(){DB.ajudaCustoVeiculo=parseBRL(document.getElementById('ca-v').value);await saveDB();};
+window.saveAj=async function(){DB.ajudaCustoVeiculo=parseBRL(document.getElementById('ca-v').value);await saveDB('Ajuda custo alterada','');renderConfig();};
 window.novoVc=function(){const el=document.getElementById('tab-config');const d=document.createElement('div');d.className='fc';d.innerHTML=`<label class="lb">Nome</label><input class="inp" id="vf-n"><label class="lb">Placa</label><input class="inp" id="vf-p"><label class="lb">km/l</label><input class="inp" type="number" id="vf-k" step="0.1">
 <div class="acts"><button class="btn-secondary" onclick="renderConfig()">Cancelar</button><button class="btn-primary" onclick="saveVc()">Salvar</button></div>`;el.prepend(d);};
-window.saveVc=async function(){const v={id:uid(),nome:document.getElementById('vf-n').value,placa:document.getElementById('vf-p').value,kml:parseFloat(document.getElementById('vf-k').value)||0};if(!v.nome||v.kml<=0)return alert('Preencha');DB.veiculos.push(v);await saveDB();};
-window.delVc=async function(id){if(confirm('Excluir?')){DB.veiculos=DB.veiculos.filter(x=>x.id!==id);await saveDB();}};
+window.saveVc=async function(){const v={id:uid(),nome:document.getElementById('vf-n').value,placa:document.getElementById('vf-p').value,kml:parseFloat(document.getElementById('vf-k').value)||0};if(!v.nome||v.kml<=0)return alert('Preencha');DB.veiculos.push(v);await saveDB('Veículo adicionado',v.nome);renderConfig();};
+window.delVc=async function(id){if(confirm('Excluir?')){DB.veiculos=DB.veiculos.filter(x=>x.id!==id);await saveDB('Veículo excluído','');renderConfig();}};
 function renderLogs(){
   const el=document.getElementById('tab-logs');
   document.getElementById('top-metrics').innerHTML='';
