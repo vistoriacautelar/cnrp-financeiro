@@ -713,15 +713,39 @@ window.delFatEntry=async function(id){if(confirm('Excluir este faturamento?')){D
 function fatForm(f){
   const isEdit=!!f;const title=isEdit?'Editar faturamento':'Novo faturamento';
   const clientes=CLIENTES;
-  document.getElementById('tab-fat').innerHTML=`<div class="fc"><h3 style="margin:0 0 10px;font-size:14px;font-weight:700">${title}</h3>
-  <label class="lb">Cliente</label><select class="sel" id="ff-c">${clientes.map(c=>`<option${f&&(f.clienteNorm||f.cliente)===c?' selected':''}>${c}</option>`).join('')}</select>
-  <label class="lb">Mês referência</label><input class="inp" id="ff-m" placeholder="Junho 2026" value="${f?esc(f.mesRef):''}">
-  <div class="row"><div style="flex:1"><label class="lb">Valor</label><input class="inp" id="ff-v" value="${f?f.valorTotal.toFixed(2).replace('.',','):''}"></div><div style="flex:1"><label class="lb">NF</label><input class="inp" id="ff-nf" value="${f?esc(f.nf||''):''}"></div></div>
-  <div class="row"><div style="flex:1"><label class="lb">Envio medição</label><input class="inp" type="date" id="ff-env" value="${f?f.envioMedicao||'':''}"></div><div style="flex:1"><label class="lb">Emissão NF</label><input class="inp" type="date" id="ff-em" value="${f?f.emissaoNF||'':''}"></div></div>
-  <div class="row"><div style="flex:1"><label class="lb">Prev. pagamento</label><input class="inp" type="date" id="ff-pp" value="${f?f.prevPagamento||'':''}"></div><div style="flex:1"><label class="lb">Depósito</label><input class="inp" type="date" id="ff-dp" value="${f?f.dataDeposito||'':''}"></div></div>
-  <div class="row"><div style="flex:1"><label class="lb">Status</label><select class="sel" id="ff-st"><option${f&&f.status==='Pendente'?' selected':''}>Pendente</option><option${f&&f.status==='Pago'?' selected':''}>Pago</option></select></div><div style="flex:1"><label class="lb">Imposto NF</label><input class="inp" id="ff-imp" value="${f&&f.imposto?f.imposto.toFixed(2).replace('.',','):''}"></div></div>
-  <label class="lb">Obs</label><input class="inp" id="ff-obs" value="${f?esc(f.obs||''):''}">
-  <div class="acts">${isEdit?`<button class="btn-danger" onclick="delFatEntry('${f.id}')" style="margin-right:auto">🗑️ Excluir</button>`:''}<button class="btn-secondary" onclick="renderFat()">Cancelar</button><button class="btn-primary" onclick="salvarFat('${isEdit?f.id:''}')">${isEdit?'Atualizar':'Salvar'}</button></div></div>`;
+  let saidasHtml='';
+  if(isEdit){
+    const cl=normCl(f.clienteNorm||f.cliente);const clRaw=f.clienteNorm||f.cliente;
+    const med=DB.medicoes.find(m=>(m.consorcio===clRaw||normCl(m.consorcio)===cl)&&f.mesRef&&f.mesRef.includes(m.mesRef));
+    const medId=med?med.id:null;
+    const ss=medId?DB.saidas.filter(s=>s.medicaoId===medId).sort((a,b)=>(a.data||'').localeCompare(b.data||'')):[];
+    if(ss.length){
+      saidasHtml=`<div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px"><h4 style="font-size:.9rem;font-weight:700;margin-bottom:8px"><i class="fa-solid fa-car"></i> Saídas vinculadas (${ss.length})</h4>
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+      <tr style="background:#f1f5f9"><th style="padding:6px 8px;text-align:left">Data</th><th style="padding:6px 8px;text-align:left">Local</th><th style="padding:6px 8px;text-align:left">Colaboradores</th><th style="padding:6px 8px;text-align:right">Campo</th><th style="padding:6px 8px;text-align:right">MO</th><th style="padding:6px 8px">👥</th></tr>`;
+      ss.forEach((sd,i)=>{
+        const colabNames=(sd.colaboradores||[]).map(cid=>DB.colaboradores.find(cb=>cb.id===cid)?.nome).filter(Boolean);
+        const moVal=DB.maoDeObra.filter(m=>m.saidaId===sd.id).reduce((s,m)=>s+m.valor,0);
+        saidasHtml+=`<tr style="background:\${i%2?'#f8fafc':'#fff'}">
+        <td style="padding:5px 8px">\${fmtD(sd.data)}</td><td style="padding:5px 8px">\${esc(sd.local)}</td>
+        <td style="padding:5px 8px;color:#7c3aed;font-size:.8rem">\${colabNames.length?colabNames.join(', '):'—'}</td>
+        <td style="padding:5px 8px;text-align:right">\${fmt(getTot(sd))}</td>
+        <td style="padding:5px 8px;text-align:right;color:#8b5cf6;font-weight:600">\${moVal?fmt(moVal):'—'}</td>
+        <td style="padding:5px 8px;text-align:center"><button class="btn-icon edit" onclick="editSaidaColabs('\${sd.id}')"><i class="fa-solid fa-users"></i></button></td></tr>`;
+      });
+      saidasHtml+=`</table></div>`;
+    }else{saidasHtml=`<div style="border-top:1px solid var(--border);margin-top:16px;padding-top:12px;color:var(--text-muted);font-size:.85rem"><i class="fa-solid fa-info-circle"></i> Nenhuma saída vinculada.</div>`;}
+  }
+  document.getElementById('tab-fat').innerHTML=`<div class="fc"><h3 style="margin:0 0 10px;font-size:14px;font-weight:700">\${title}</h3>
+  <label class="lb">Cliente</label><select class="sel" id="ff-c">\${clientes.map(c=>\`<option\${f&&(f.clienteNorm||f.cliente)===c?' selected':''}>\${c}</option>\`).join('')}</select>
+  <label class="lb">Mês referência</label><input class="inp" id="ff-m" placeholder="Junho 2026" value="\${f?esc(f.mesRef):''}">
+  <div class="row"><div style="flex:1"><label class="lb">Valor</label><input class="inp" id="ff-v" value="\${f?f.valorTotal.toFixed(2).replace('.',','):''}"></div><div style="flex:1"><label class="lb">NF</label><input class="inp" id="ff-nf" value="\${f?esc(f.nf||''):''}"></div></div>
+  <div class="row"><div style="flex:1"><label class="lb">Envio medição</label><input class="inp" type="date" id="ff-env" value="\${f?f.envioMedicao||'':''}"></div><div style="flex:1"><label class="lb">Emissão NF</label><input class="inp" type="date" id="ff-em" value="\${f?f.emissaoNF||'':''}"></div></div>
+  <div class="row"><div style="flex:1"><label class="lb">Prev. pagamento</label><input class="inp" type="date" id="ff-pp" value="\${f?f.prevPagamento||'':''}"></div><div style="flex:1"><label class="lb">Depósito</label><input class="inp" type="date" id="ff-dp" value="\${f?f.dataDeposito||'':''}"></div></div>
+  <div class="row"><div style="flex:1"><label class="lb">Status</label><select class="sel" id="ff-st"><option\${f&&f.status==='Pendente'?' selected':''}>Pendente</option><option\${f&&f.status==='Pago'?' selected':''}>Pago</option></select></div><div style="flex:1"><label class="lb">Imposto NF</label><input class="inp" id="ff-imp" value="\${f&&f.imposto?f.imposto.toFixed(2).replace('.',','):''}"></div></div>
+  <label class="lb">Obs</label><input class="inp" id="ff-obs" value="\${f?esc(f.obs||''):''}">
+  \${saidasHtml}
+  <div class="acts">\${isEdit?\`<button class="btn-danger" onclick="delFatEntry('\${f.id}')" style="margin-right:auto"><i class="fa-solid fa-trash"></i> Excluir</button>\`:''}<button class="btn-secondary" onclick="renderFat()">Cancelar</button><button class="btn-primary" onclick="salvarFat('\${isEdit?f.id:''}')">\${isEdit?'Atualizar':'Salvar'}</button></div></div>`;
 }
 window.novoFat=function(){fatForm(null);};
 window.editFat=function(id){const f=DB.faturamento.find(x=>x.id===id);if(f)fatForm(f);};
