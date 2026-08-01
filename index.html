@@ -311,7 +311,7 @@ const firestore=getFirestore(app);
 const storage=getStorage(app);
 
 // ═══════ DATA ═══════
-let DB={medicoes:[],saidas:[],obrigacoes:[],provisoes:[],veiculos:[],faturamento:[],precoLitro:0,ajudaCustoVeiculo:1000,producao:[],valoresRelatorio:[],logs:[]};
+let DB={medicoes:[],saidas:[],obrigacoes:[],provisoes:[],veiculos:[],faturamento:[],precoLitro:0,ajudaCustoVeiculo:1000,producao:[],valoresRelatorio:[],logs:[],despesasGerais:[],maoDeObra:[]};
 const DOC_REF=doc(firestore,'financeiro','data');
 let unsubSnap=null;
 
@@ -349,7 +349,7 @@ function startSync(){
       const d=snap.data();
       DB.medicoes=d.medicoes||[];DB.saidas=d.saidas||[];DB.obrigacoes=d.obrigacoes||[];
       DB.provisoes=d.provisoes||[];DB.veiculos=d.veiculos||[];DB.faturamento=d.faturamento||[];
-      DB.precoLitro=d.precoLitro||0;DB.ajudaCustoVeiculo=d.ajudaCustoVeiculo??1000;DB.producao=d.producao||[];DB.valoresRelatorio=d.valoresRelatorio||[];DB.logs=d.logs||[];
+      DB.precoLitro=d.precoLitro||0;DB.ajudaCustoVeiculo=d.ajudaCustoVeiculo??1000;DB.producao=d.producao||[];DB.valoresRelatorio=d.valoresRelatorio||[];DB.logs=d.logs||[];DB.despesasGerais=d.despesasGerais||[];DB.maoDeObra=d.maoDeObra||[];
       document.getElementById('sync-status').innerHTML='<i class="fa-solid fa-cloud-arrow-up"></i> Sincronizado';document.getElementById('sync-status').style.color='#34d399';
       // Skip render if this is our own write (within 3 seconds)
       if(Date.now()-_lastSaveTs<3000){/* own write, skip render */}else{render();}
@@ -782,7 +782,7 @@ function renderSaidas(){
   const el=document.getElementById('tab-saidas');
   const clientes=[...new Set(DB.medicoes.map(m=>normCl(m.consorcio)))].sort();
   const mesesDoCliente=window.sfCliente?DB.medicoes.filter(m=>normCl(m.consorcio)===window.sfCliente).sort((a,b)=>mesOrder(b.mesRef)-mesOrder(a.mesRef)):[];
-  document.getElementById('top-metrics').innerHTML=`<button class="btn-danger" id="btn-del-saidas" style="display:none;margin-right:8px" onclick="delSelectedSaidas()"><i class="fa-solid fa-trash"></i> Excluir selecionados</button><button class="btn-primary" onclick="novaSaida()"><i class="fa-solid fa-plus"></i> Nova saída</button>`;
+  document.getElementById('top-metrics').innerHTML=`<button class="btn-danger" id="btn-del-saidas" style="display:none;margin-right:8px" onclick="delSelectedSaidas()"><i class="fa-solid fa-trash"></i> Excluir selecionados</button><button class="btn-secondary" onclick="novaDespGeral()" style="margin-right:6px"><i class="fa-solid fa-receipt"></i> Despesa geral</button><button class="btn-secondary" onclick="novaMaoDeObra()" style="margin-right:6px"><i class="fa-solid fa-helmet-safety"></i> Mão de obra</button><button class="btn-primary" onclick="novaSaida()"><i class="fa-solid fa-plus"></i> Nova saída</button>`;
   const fl=DB.saidas.filter(x=>{
     if(!window.sfCliente&&!window.sfMed)return true;
     if(window.sfMed)return x.medicaoId===window.sfMed;
@@ -792,7 +792,11 @@ function renderSaidas(){
   let tF=fl.reduce((s,sd)=>s+getTot(sd),0);
   let h=`<div class="filters-row"><select class="filter-input" style="flex:1" onchange="window.sfCliente=this.value;window.sfMed='';renderSaidas()"><option value="">Todos os clientes</option>${clientes.map(c=>`<option value="${esc(c)}"${window.sfCliente===c?' selected':''}>${esc(c)}</option>`).join('')}</select>
   <select class="filter-input" style="flex:1" onchange="window.sfMed=this.value;renderSaidas()"${!window.sfCliente?' disabled':''}><option value="">Todas as medições</option>${mesesDoCliente.map(m=>`<option value="${m.id}"${window.sfMed===m.id?' selected':''}>${esc(m.mesRef)}</option>`).join('')}</select></div>`;
-  h+=`<div class="total-banner"><div><span class="lbl">${fl.length} saídas</span></div><div><span class="val">${fmt(tF)}</span></div></div>`;
+  const tDG=DB.despesasGerais.filter(d=>{if(!window.sfCliente&&!window.sfMed)return true;if(window.sfMed)return d.medicaoId===window.sfMed;if(window.sfCliente)return normCl(d.clienteNome)===window.sfCliente;return true;}).reduce((s,d)=>s+d.valor,0);
+  const tMO=DB.maoDeObra.filter(d=>{if(!window.sfCliente&&!window.sfMed)return true;if(window.sfMed)return d.medicaoId===window.sfMed;if(window.sfCliente)return normCl(d.clienteNome)===window.sfCliente;return true;}).reduce((s,d)=>s+d.valor,0);
+  const tTotal=tF+tDG+tMO;
+  h+=`<div class="total-banner"><div><span class="lbl">${fl.length} saídas · Custos totais</span></div><div><span class="val">${fmt(tTotal)}</span></div></div>
+  <div style="display:flex;gap:16px;margin-bottom:16px;font-size:.85rem;color:var(--text-muted)"><span><i class="fa-solid fa-car"></i> Campo: ${fmt(tF)}</span>${tDG?`<span><i class="fa-solid fa-receipt"></i> Desp. gerais: ${fmt(tDG)}</span>`:''}${tMO?`<span><i class="fa-solid fa-helmet-safety"></i> Mão de obra: ${fmt(tMO)}</span>`:''}</div>`;
   h+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><label style="display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer"><input type="checkbox" onchange="document.querySelectorAll('.chk-saida').forEach(x=>x.checked=this.checked);updDelBtn('saidas')"> Selecionar todos</label></div><div class="data-list">`;
   fl.slice(0,60).forEach(sd=>{const tot=getTot(sd);const v=DB.veiculos.find(x=>x.id===sd.veiculoId);const comb=v?calcComb(sd.km,v.kml,sd.valorLitro):(sd.combManual||0);
     const medNm=sd.medicaoId?DB.medicoes.find(m=>m.id===sd.medicaoId):null;
@@ -803,6 +807,43 @@ function renderSaidas(){
   });
   h+=`</div>`;
   if(!fl.length)h+=`<div class="empty-state"><i class="fa-solid fa-car"></i><p>Nenhuma saída encontrada.</p></div>`;
+
+  // Despesas Gerais
+  const dgFilt=DB.despesasGerais.filter(d=>{
+    if(!window.sfCliente&&!window.sfMed)return true;
+    if(window.sfMed)return d.medicaoId===window.sfMed;
+    if(window.sfCliente)return normCl(d.clienteNome)===window.sfCliente;
+    return true;
+  }).sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+  if(dgFilt.length||DB.despesasGerais.length){
+    const totDG=dgFilt.reduce((s,d)=>s+d.valor,0);
+    h+=`<div style="margin-top:24px"><h3 style="font-size:1rem;font-weight:700;margin-bottom:8px"><i class="fa-solid fa-receipt" style="color:var(--warning)"></i> Despesas gerais${dgFilt.length?` (${fmt(totDG)})`:''}</h3>`;
+    h+=`<div class="data-list">`;
+    dgFilt.forEach(d=>{
+      h+=`<div class="data-row"><input type="checkbox" class="chk-saida" value="dg_${d.id}" style="margin-right:8px;flex-shrink:0"><div class="data-col-main"><div class="data-row-title">${fmtD(d.data)} · <span style="color:var(--primary)">${esc(normCl(d.clienteNome))} ${esc(d.mesRef||'')}</span></div>
+      <div class="data-row-desc">${esc(d.descricao)}</div></div><div class="data-col-val">${fmt(d.valor)}<i class="fa-solid fa-trash btn-icon-danger" onclick="delDespGeral('${d.id}')"></i></div></div>`;
+    });
+    h+=`</div></div>`;
+  }
+
+  // Mão de Obra
+  const moFilt=DB.maoDeObra.filter(d=>{
+    if(!window.sfCliente&&!window.sfMed)return true;
+    if(window.sfMed)return d.medicaoId===window.sfMed;
+    if(window.sfCliente)return normCl(d.clienteNome)===window.sfCliente;
+    return true;
+  }).sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+  if(moFilt.length||DB.maoDeObra.length){
+    const totMO=moFilt.reduce((s,d)=>s+d.valor,0);
+    h+=`<div style="margin-top:24px"><h3 style="font-size:1rem;font-weight:700;margin-bottom:8px"><i class="fa-solid fa-helmet-safety" style="color:#8b5cf6"></i> Mão de obra${moFilt.length?` (${fmt(totMO)})`:''}</h3>`;
+    h+=`<div class="data-list">`;
+    moFilt.forEach(d=>{
+      h+=`<div class="data-row"><input type="checkbox" class="chk-saida" value="mo_${d.id}" style="margin-right:8px;flex-shrink:0"><div class="data-col-main"><div class="data-row-title"><strong>${esc(d.nome)}</strong> · ${esc(d.funcao)} · <span style="color:var(--primary)">${esc(normCl(d.clienteNome))} ${esc(d.mesRef||'')}</span></div>
+      <div class="data-row-desc">${fmtD(d.data)}</div></div><div class="data-col-val">${fmt(d.valor)}<i class="fa-solid fa-trash btn-icon-danger" onclick="delMaoDeObra('${d.id}')"></i></div></div>`;
+    });
+    h+=`</div></div>`;
+  }
+
   el.innerHTML=h;
 }
 window.novaSaida=function(){
@@ -863,6 +904,73 @@ window.salvarSd=async function(){
   if(!e.data||!e.local)return alert('Preencha data e local');DB.saidas.push(e);await saveDB('Saída criada',e.local+' '+e.data);renderSaidas();
 };
 window.delSd=async function(id){if(confirm('Excluir esta saída?')){DB.saidas=DB.saidas.filter(x=>x.id!==id);await saveDB('Saída excluída',id);renderSaidas();}};
+
+
+// ═══════ DESPESAS GERAIS & MÃO DE OBRA ═══════
+window.novaDespGeral=function(){
+  const clientes=CLIENTES;
+  document.getElementById('tab-saidas').innerHTML=`<div class="fc"><h3 style="margin:0 0 12px;font-size:16px;font-weight:700"><i class="fa-solid fa-receipt"></i> Nova despesa geral</h3>
+  <div class="row"><div style="flex:1"><label class="lb">Cliente</label><select class="sel" id="dg-cl" onchange="updDgMed()"><option value="">Selecione</option>${clientes.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select></div>
+  <div style="flex:1"><label class="lb">Medição</label><select class="sel" id="dg-m" disabled><option value="">—</option></select></div></div>
+  <div class="row"><div style="flex:1"><label class="lb">Data</label><input class="inp" type="date" id="dg-d"></div><div style="flex:1"><label class="lb">Valor</label><input class="inp" id="dg-v" inputmode="decimal"></div></div>
+  <label class="lb">Descrição</label><input class="inp" id="dg-desc" placeholder="Descrição da despesa">
+  <div class="acts"><button class="btn-secondary" onclick="renderSaidas()">Cancelar</button><button class="btn-primary" onclick="salvarDespGeral()"><i class="fa-solid fa-check"></i> Salvar</button></div></div>`;
+};
+window.updDgMed=function(){const cl=document.getElementById('dg-cl').value;const sel=document.getElementById('dg-m');sel.disabled=!cl;
+  const meds=DB.medicoes.filter(m=>normCl(m.consorcio)===cl).sort((a,b)=>mesOrder(b.mesRef)-mesOrder(a.mesRef));
+  sel.innerHTML=`<option value="">—</option><option value="__proxima__">📌 Próxima medição</option>${meds.map(m=>`<option value="${m.id}">${esc(m.mesRef)}</option>`).join('')}`;
+};
+window.salvarDespGeral=async function(){
+  const clNome=document.getElementById('dg-cl').value;
+  let medId=document.getElementById('dg-m').value;
+  const med=DB.medicoes.find(m=>m.id===medId);
+  if(medId==='__proxima__'&&clNome){const now=new Date();const ms=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const mr=ms[now.getMonth()]+' '+now.getFullYear();let em=DB.medicoes.find(m=>normCl(m.consorcio)===clNome&&m.mesRef===mr);
+    if(!em){em={id:uid(),consorcio:clNome.replace(/^Consórcio\s*/i,''),mesRef:mr,imposto:0};DB.medicoes.push(em);}medId=em.id;}
+  const d={id:uid(),data:document.getElementById('dg-d').value,clienteNome:clNome,medicaoId:medId,mesRef:med?med.mesRef:'',descricao:document.getElementById('dg-desc').value,valor:parseBRL(document.getElementById('dg-v').value)};
+  if(!d.data||!d.clienteNome||d.valor<=0)return alert('Preencha todos os campos');
+  DB.despesasGerais.push(d);await saveDB('Despesa geral criada',d.descricao);renderSaidas();
+};
+window.delDespGeral=async function(id){if(confirm('Excluir?')){DB.despesasGerais=DB.despesasGerais.filter(x=>x.id!==id);await saveDB('Despesa geral excluída','');renderSaidas();}};
+
+window.novaMaoDeObra=function(){
+  const clientes=CLIENTES;
+  document.getElementById('tab-saidas').innerHTML=`<div class="fc"><h3 style="margin:0 0 12px;font-size:16px;font-weight:700"><i class="fa-solid fa-helmet-safety"></i> Nova mão de obra</h3>
+  <div class="row"><div style="flex:1"><label class="lb">Cliente</label><select class="sel" id="mo-cl" onchange="updMoMed()"><option value="">Selecione</option>${clientes.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select></div>
+  <div style="flex:1"><label class="lb">Medição</label><select class="sel" id="mo-m" disabled><option value="">—</option></select></div></div>
+  <div class="row"><div style="flex:1"><label class="lb">Nome da pessoa</label><input class="inp" id="mo-nome" placeholder="Nome completo"></div><div style="flex:1"><label class="lb">Função</label><input class="inp" id="mo-func" placeholder="Ajudante, pedreiro..."></div></div>
+  <div class="row"><div style="flex:1"><label class="lb">Data</label><input class="inp" type="date" id="mo-d"></div><div style="flex:1"><label class="lb">Valor pago</label><input class="inp" id="mo-v" inputmode="decimal"></div></div>
+  <div class="acts"><button class="btn-secondary" onclick="renderSaidas()">Cancelar</button><button class="btn-primary" onclick="salvarMaoDeObra()"><i class="fa-solid fa-check"></i> Salvar</button></div></div>`;
+};
+window.updMoMed=function(){const cl=document.getElementById('mo-cl').value;const sel=document.getElementById('mo-m');sel.disabled=!cl;
+  const meds=DB.medicoes.filter(m=>normCl(m.consorcio)===cl).sort((a,b)=>mesOrder(b.mesRef)-mesOrder(a.mesRef));
+  sel.innerHTML=`<option value="">—</option><option value="__proxima__">📌 Próxima medição</option>${meds.map(m=>`<option value="${m.id}">${esc(m.mesRef)}</option>`).join('')}`;
+};
+window.salvarMaoDeObra=async function(){
+  const clNome=document.getElementById('mo-cl').value;
+  let medId=document.getElementById('mo-m').value;
+  const med=DB.medicoes.find(m=>m.id===medId);
+  if(medId==='__proxima__'&&clNome){const now=new Date();const ms=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const mr=ms[now.getMonth()]+' '+now.getFullYear();let em=DB.medicoes.find(m=>normCl(m.consorcio)===clNome&&m.mesRef===mr);
+    if(!em){em={id:uid(),consorcio:clNome.replace(/^Consórcio\s*/i,''),mesRef:mr,imposto:0};DB.medicoes.push(em);}medId=em.id;}
+  const d={id:uid(),data:document.getElementById('mo-d').value,clienteNome:clNome,medicaoId:medId,mesRef:med?med.mesRef:'',nome:document.getElementById('mo-nome').value,funcao:document.getElementById('mo-func').value,valor:parseBRL(document.getElementById('mo-v').value)};
+  if(!d.nome||!d.clienteNome||d.valor<=0)return alert('Preencha nome, cliente e valor');
+  DB.maoDeObra.push(d);await saveDB('Mão de obra criada',d.nome+' - '+d.funcao);renderSaidas();
+};
+window.delMaoDeObra=async function(id){if(confirm('Excluir?')){DB.maoDeObra=DB.maoDeObra.filter(x=>x.id!==id);await saveDB('Mão de obra excluída','');renderSaidas();}};
+
+// Update multi-delete to handle dg_ and mo_ prefixes
+window.delSelectedSaidas=async function(){
+  const ids=[...document.querySelectorAll('.chk-saida:checked')].map(x=>x.value);
+  if(!ids.length)return;if(!confirm('Excluir '+ids.length+' item(ns)?'))return;
+  const saidaIds=ids.filter(x=>!x.startsWith('dg_')&&!x.startsWith('mo_'));
+  const dgIds=ids.filter(x=>x.startsWith('dg_')).map(x=>x.slice(3));
+  const moIds=ids.filter(x=>x.startsWith('mo_')).map(x=>x.slice(3));
+  if(saidaIds.length)DB.saidas=DB.saidas.filter(x=>!saidaIds.includes(x.id));
+  if(dgIds.length)DB.despesasGerais=DB.despesasGerais.filter(x=>!dgIds.includes(x.id));
+  if(moIds.length)DB.maoDeObra=DB.maoDeObra.filter(x=>!moIds.includes(x.id));
+  await saveDB('Itens excluídos (lote)',ids.length+' itens');renderSaidas();
+};
 
 // ═══════ FIXOS ═══════
 function renderFixos(){
