@@ -428,9 +428,9 @@ window.doUpload=async function(fatId,tipoDoc){
         if(f.id===fatId){const arquivos=f.arquivos||[];arquivos.push({nome:file.name,url,path,tipo:tipoDoc,dt:new Date().toISOString()});return{...f,arquivos};}
         return f;
       });
-      await saveDB();
+      await saveDB('Arquivo anexado',tipoDoc+' - '+file.name);
       document.getElementById('upload-status-'+fatId).textContent='✅ Enviado!';
-      setTimeout(()=>render(),1000);
+      // Don't re-render — keep scroll position and accordion state
     }catch(e){console.error('Upload error:',e);document.getElementById('upload-status-'+fatId).textContent='❌ Erro: '+e.message;}
   };
   input.click();
@@ -604,7 +604,13 @@ function renderFat(){
   el.innerHTML=h;
 }
 window.toggleDetail=function(id){const el=document.getElementById('det-'+id);if(el)el.style.display=el.style.display==='none'?'block':'none';};
-window.toggleFat=async function(id){const _f=DB.faturamento.find(f=>f.id===id);const _ns=_f?.status==='Pago'?'Pendente':'Pago';DB.faturamento=DB.faturamento.map(f=>f.id===id?{...f,status:_ns}:f);await saveDB('Status faturamento',(_f?.mesRef||'')+' → '+_ns);};
+window.toggleFat=async function(id){const _f=DB.faturamento.find(f=>f.id===id);const _ns=_f?.status==='Pago'?'Pendente':'Pago';DB.faturamento=DB.faturamento.map(f=>f.id===id?{...f,status:_ns}:f);
+  // Save scroll + open accordions
+  const _scroll=document.querySelector('.main-content')?.scrollTop||0;
+  const _open=[...document.querySelectorAll('details.client-group[open]')].map(d=>d.querySelector('.client-name')?.textContent);
+  await saveDB('Status faturamento',(_f?.mesRef||'')+' → '+_ns);
+  // Restore state after render
+  setTimeout(()=>{_open.forEach(name=>{document.querySelectorAll('.client-name').forEach(el=>{if(el.textContent===name)el.closest('details')?.setAttribute('open','');});});document.querySelector('.main-content').scrollTop=_scroll;},50);};
 window.delFatEntry=async function(id){if(confirm('Excluir este faturamento?')){DB.faturamento=DB.faturamento.filter(f=>f.id!==id);await saveDB();}};
 function fatForm(f){
   const isEdit=!!f;const title=isEdit?'Editar faturamento':'Novo faturamento';
@@ -1286,7 +1292,7 @@ window.importarMedicao=function(){
   const clOpts=vcClientes.length?vcClientes.map(c=>`<option value="${c.id}" data-nome="${esc(c.nome)}">${esc(c.nome)}</option>`).join(''):CLIENTES.map(c=>`<option value="${esc(c)}" data-nome="${esc(c)}">${esc(c)}</option>`).join('');
   el.innerHTML=`<div class="fc"><h3 style="margin:0 0 12px;font-size:16px;font-weight:700"><i class="fa-solid fa-file-excel" style="color:#059669"></i> Importar planilha de medição</h3>
   <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:16px">Selecione o cliente e o arquivo XLSX da medição. O sistema vai extrair as frentes de serviço, quantidades e valores automaticamente.</p>
-  <div class="row"><div style="flex:1"><label class="lb">Cliente</label><select class="sel" id="imp-cl"><option value="">Selecione o cliente</option>${clOpts}</select></div>
+  <div class="row"><div style="flex:1"><label class="lb">Cliente</label><select class="sel" id="imp-cl" onchange="if(window._impData)renderImpPreview()"><option value="">Selecione o cliente</option>${clOpts}</select></div>
   <div style="flex:1"><label class="lb">Tipo relatório</label><select class="sel" id="imp-tipo">${TIPOS_REL.map(t=>`<option>${t}</option>`).join('')}</select></div></div>
   <label class="lb">Arquivo XLSX</label>
   <div style="border:2px dashed var(--border);border-radius:8px;padding:24px;text-align:center;cursor:pointer;background:#f8fafc;transition:all .2s" onclick="document.getElementById('imp-file').click()" id="imp-drop">
@@ -1354,15 +1360,40 @@ window.previewImport=async function(input){
     const totalVal=items.reduce((s,x)=>s+x.valor,0);
 
     window._impData={mesRef:mesNorm,items,totalQtd,totalVal};
+    renderImpPreview();
+window.renderImpPreview=function(){
+    if(!window._impData)return;
+    const {mesRef,items}=window._impData;
+    const totalQtd=items.reduce((s,x)=>s+x.qtd,0);
+    const totalVal=items.reduce((s,x)=>s+x.valor,0);
+    window._impData.totalQtd=totalQtd;
+    window._impData.totalVal=totalVal;
 
-    // Show preview
+    const clienteId=document.getElementById('imp-cl').value;
+    items.forEach(it=>{
+      it._dup=DB.producao.some(p=>p.clienteId===clienteId&&p.mesRef===mesRef&&p.coletorNome.toLowerCase()===it.frente.toLowerCase());
+      it._import=!it._dup;
+    });
+    const nDups=items.filter(x=>x._dup).length;
+
     let prev=`<div class="report-section"><h3 style="font-weight:700;margin-bottom:8px"><i class="fa-solid fa-eye"></i> Pré-visualização</h3>
-    <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:12px">Mês: <strong>${esc(mesNorm)}</strong> · ${items.length} frentes · ${totalQtd} vistorias · ${fmt(totalVal)}</p>
-    <table style="width:100%;border-collapse:collapse;font-size:.85rem">
-    <tr style="background:#f1f5f9"><th style="padding:8px;text-align:left">#</th><th style="padding:8px;text-align:left">Frente de serviço</th><th style="padding:8px;text-align:right">Preço unit.</th><th style="padding:8px;text-align:right">Qtd</th><th style="padding:8px;text-align:right">Valor</th></tr>`;
-    items.forEach((it,i)=>{prev+=`<tr style="background:${i%2?'#f8fafc':'#fff'}"><td style="padding:6px 8px">${i+1}</td><td style="padding:6px 8px">${esc(it.frente)}</td><td style="padding:6px 8px;text-align:right">${fmt(it.preco)}</td><td style="padding:6px 8px;text-align:right;font-weight:600">${it.qtd}</td><td style="padding:6px 8px;text-align:right;font-weight:600">${fmt(it.valor)}</td></tr>`;});
-    prev+=`<tr style="background:#e2e8f0;font-weight:700"><td colspan="3" style="padding:8px">TOTAL</td><td style="padding:8px;text-align:right">${totalQtd}</td><td style="padding:8px;text-align:right">${fmt(totalVal)}</td></tr></table>`;
-    prev+=`<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:.875rem;cursor:pointer"><input type="checkbox" id="imp-fat" checked> Criar registro de faturamento (${fmt(totalVal)})</label>`;
+    <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:12px"><div style="flex:0 0 200px"><label class="lb">Mês / Ano</label><input class="inp" id="imp-mesref" value="${esc(mesRef)}" onchange="window._impData.mesRef=this.value;renderImpPreview()"></div>
+    <p style="font-size:.85rem;color:var(--text-muted)">${items.length} frentes · ${totalQtd} vistorias · ${fmt(totalVal)}</p></div>`;
+    if(nDups>0)prev+=`<p style="font-size:.85rem;color:var(--warning);font-weight:600;margin-bottom:8px"><i class="fa-solid fa-triangle-exclamation"></i> ${nDups} frente(s) já cadastrada(s). Desmarque para não duplicar.</p>`;
+    prev+=`<table style="width:100%;border-collapse:collapse;font-size:.85rem">
+    <tr style="background:#f1f5f9"><th style="padding:8px;text-align:center;width:40px">✓</th><th style="padding:8px;text-align:left">Frente de serviço</th><th style="padding:8px;text-align:right">Preço unit.</th><th style="padding:8px;text-align:right">Qtd</th><th style="padding:8px;text-align:right">Valor</th><th style="padding:8px;text-align:center">Status</th></tr>`;
+    items.forEach((it,i)=>{
+      const dupTag=it._dup?`<span style="background:var(--warning-bg);color:var(--warning-text);padding:2px 6px;border-radius:4px;font-size:.7rem;font-weight:600">Duplicado</span>`:`<span style="color:var(--success);font-size:.75rem">Novo</span>`;
+      prev+=`<tr style="background:${it._dup?'#fffbeb':i%2?'#f8fafc':'#fff'}"><td style="padding:6px 8px;text-align:center"><input type="checkbox" class="imp-chk" data-idx="${i}"${it._import?' checked':''}></td>
+      <td style="padding:4px 6px"><input class="inp imp-ed-frente" data-idx="${i}" value="${esc(it.frente)}" style="padding:4px 8px;font-size:.85rem" onchange="window._impData.items[${i}].frente=this.value;renderImpPreview()"></td>
+      <td style="padding:4px 6px"><input class="inp imp-ed-preco" data-idx="${i}" value="${it.preco}" style="padding:4px 8px;font-size:.85rem;text-align:right;width:80px" onchange="window._impData.items[${i}].preco=parseFloat(this.value)||0;window._impData.items[${i}].valor=window._impData.items[${i}].preco*window._impData.items[${i}].qtd;renderImpPreview()"></td>
+      <td style="padding:4px 6px"><input class="inp imp-ed-qtd" data-idx="${i}" value="${it.qtd}" type="number" style="padding:4px 8px;font-size:.85rem;text-align:right;width:60px" onchange="window._impData.items[${i}].qtd=parseInt(this.value)||0;window._impData.items[${i}].valor=window._impData.items[${i}].preco*window._impData.items[${i}].qtd;renderImpPreview()"></td>
+      <td style="padding:6px 8px;text-align:right;font-weight:600">${fmt(it.valor)}</td><td style="padding:6px 8px;text-align:center">${dupTag}</td></tr>`;
+    });
+    prev+=`<tr style="background:#e2e8f0;font-weight:700"><td style="padding:8px"></td><td colspan="2" style="padding:8px">TOTAL</td><td style="padding:8px;text-align:right">${totalQtd}</td><td style="padding:8px;text-align:right">${fmt(totalVal)}</td><td></td></tr></table>`;
+
+    const fatDup=DB.faturamento.some(f=>(f.clienteNorm||f.cliente)===document.getElementById('imp-cl').selectedOptions[0]?.textContent&&f.mesRef===mesRef);
+    prev+=`<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:.875rem;cursor:pointer"><input type="checkbox" id="imp-fat"${fatDup?'':' checked'}> Criar registro de faturamento (${fmt(totalVal)})${fatDup?' <span style="color:var(--warning);font-weight:600">⚠️ já existe faturamento para este cliente/mês</span>':''}</label>`;
     prev+=`</div>`;
     document.getElementById('imp-preview').innerHTML=prev;
     document.getElementById('imp-btn').disabled=false;
@@ -1377,31 +1408,38 @@ window.confirmarImport=async function(){
   const tipo=document.getElementById('imp-tipo').value;
   if(!clienteId)return alert('Selecione o cliente');
 
-  const {mesRef,items,totalQtd,totalVal}=window._impData;
+  const mesRef=window._impData.mesRef;const items=window._impData.items;const totalQtd=window._impData.totalQtd;const totalVal=window._impData.totalVal;
   const criarFat=document.getElementById('imp-fat')?.checked;
 
-  // Create production entries — one per frente de serviço
+  // Read which items are checked
+  const checkedIdxs=new Set();
+  document.querySelectorAll('.imp-chk:checked').forEach(chk=>checkedIdxs.add(parseInt(chk.dataset.idx)));
+  const toImport=items.filter((_,i)=>checkedIdxs.has(i));
+
+  if(!toImport.length)return alert('Nenhum item selecionado para importar');
+
   const vr=DB.valoresRelatorio.find(v=>v.clienteId===clienteId&&v.tipoRelatorio===tipo);
   const valorUnit=vr?vr.valorUnitario:0;
 
-  items.forEach(it=>{
-    // Try to match coletor by name
+  let importedQtd=0;
+  toImport.forEach(it=>{
     const col=vcColetores.find(c=>c.clienteId===clienteId&&c.nome.toLowerCase()===it.frente.toLowerCase());
     DB.producao.push({
       id:uid(),mesRef,tipoRelatorio:tipo,clienteId,clienteNome,
       coletorId:col?col.id:'',coletorNome:it.frente,
       quantidade:it.qtd,valorUnitario:it.preco||valorUnit
     });
+    importedQtd+=it.qtd;
   });
 
-  // Create faturamento entry
   if(criarFat){
-    DB.faturamento.push({id:uid(),cliente:clienteNome,clienteNorm:clienteNome,mesRef,valorTotal:totalVal,nf:'',envioMedicao:'',emissaoNF:'',prevPagamento:'',dataDeposito:'',status:'Pendente',obs:'',imposto:0,arquivos:[]});
+    const fatVal=toImport.reduce((s,x)=>s+x.valor,0);
+    DB.faturamento.push({id:uid(),cliente:clienteNome,clienteNorm:clienteNome,mesRef,valorTotal:fatVal,nf:'',envioMedicao:'',emissaoNF:'',prevPagamento:'',dataDeposito:'',status:'Pendente',obs:'',imposto:0,arquivos:[]});
   }
 
-  await saveDB('Importação planilha',mesRef+' '+clienteNome+' '+totalQtd+' vistorias');
+  await saveDB('Importação planilha',mesRef+' '+clienteNome+' '+toImport.length+' frentes '+importedQtd+' vistorias');
   window._impData=null;
-  alert('Importação concluída! '+items.length+' frentes, '+totalQtd+' vistorias'+(criarFat?' + faturamento criado':''));
+  alert('Importado: '+toImport.length+' frentes, '+importedQtd+' vistorias'+(criarFat?' + faturamento':''));
   renderProducao();
 };
 
