@@ -1364,6 +1364,11 @@ window.previewImport=async function(input){
 
     window._impData={mesRef:mesNorm,items,totalQtd,totalVal};
     renderImpPreview();
+    document.getElementById('imp-btn').disabled=false;
+    document.getElementById('imp-drop').innerHTML=`<i class="fa-solid fa-check-circle" style="font-size:2rem;color:var(--success)"></i><p style="font-size:.9rem;color:var(--success);font-weight:600">${esc(file.name)}</p>`;
+  }catch(e){console.error(e);document.getElementById('imp-preview').innerHTML=`<div style="color:var(--danger);font-size:.85rem;margin-top:8px"><i class="fa-solid fa-triangle-exclamation"></i> Erro ao ler arquivo: ${esc(e.message)}</div>`;}
+};
+
 window.renderImpPreview=function(){
     if(!window._impData)return;
     const {mesRef,items}=window._impData;
@@ -1399,9 +1404,6 @@ window.renderImpPreview=function(){
     prev+=`<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:.875rem;cursor:pointer"><input type="checkbox" id="imp-fat"${fatDup?'':' checked'}> Criar registro de faturamento (${fmt(totalVal)})${fatDup?' <span style="color:var(--warning);font-weight:600">⚠️ já existe faturamento para este cliente/mês</span>':''}</label>`;
     prev+=`</div>`;
     document.getElementById('imp-preview').innerHTML=prev;
-    document.getElementById('imp-btn').disabled=false;
-    document.getElementById('imp-drop').innerHTML=`<i class="fa-solid fa-check-circle" style="font-size:2rem;color:var(--success)"></i><p style="font-size:.9rem;color:var(--success);font-weight:600">${esc(file.name)}</p>`;
-  }catch(e){console.error(e);document.getElementById('imp-preview').innerHTML=`<div style="color:var(--danger);font-size:.85rem;margin-top:8px"><i class="fa-solid fa-triangle-exclamation"></i> Erro ao ler arquivo: ${esc(e.message)}</div>`;}
 };
 
 window.confirmarImport=async function(){
