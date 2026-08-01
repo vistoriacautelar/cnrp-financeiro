@@ -533,9 +533,9 @@ function renderFatCard(f){
     const hasDetails=(f.envioMedicao&&f.envioMedicao!=='NaT')||(f.emissaoNF&&f.emissaoNF!=='NaT')||(f.prevPagamento&&f.prevPagamento!=='NaT')||(f.dataDeposito&&f.dataDeposito!=='NaT');
     if(hasDetails){
       h+=`<div class="card-details">`;
-      if(f.envioMedicao&&f.envioMedicao!=='NaT')h+=`<div class="detail-item"><span>Envio</span><strong>${fmtD(f.envioMedicao)}</strong></div>`;
-      if(f.emissaoNF&&f.emissaoNF!=='NaT')h+=`<div class="detail-item"><span>Emissão</span><strong>${fmtD(f.emissaoNF)}</strong></div>`;
-      if(f.prevPagamento&&f.prevPagamento!=='NaT')h+=`<div class="detail-item"><span>Previsão</span><strong>${fmtD(f.prevPagamento)}</strong></div>`;
+      if(f.envioMedicao&&f.envioMedicao!=='NaT')h+=`<div class="detail-item"><span>Envio medição</span><strong>${fmtD(f.envioMedicao)}</strong></div>`;
+      if(f.emissaoNF&&f.emissaoNF!=='NaT')h+=`<div class="detail-item"><span>Emissão NF</span><strong>${fmtD(f.emissaoNF)}</strong></div>`;
+      if(f.prevPagamento&&f.prevPagamento!=='NaT')h+=`<div class="detail-item"><span>Previsão pagamento</span><strong>${fmtD(f.prevPagamento)}</strong></div>`;
       if(f.dataDeposito&&f.dataDeposito!=='NaT')h+=`<div class="detail-item"><span>Depósito</span><strong>${fmtD(f.dataDeposito)}</strong></div>`;
       if(f.obs)h+=`<div class="detail-item" style="grid-column:span 2"><span style="color:var(--warning-text)"><i class="fa-solid fa-triangle-exclamation"></i> Aviso</span><strong>${esc(f.obs)}</strong></div>`;
       h+=`</div>`;
@@ -807,8 +807,8 @@ function renderSaidas(){
 }
 window.novaSaida=function(){
   const clientes=CLIENTES;
-  // Locais únicos extraídos das saídas existentes
   const locais=[...new Set(DB.saidas.map(s=>s.local).filter(Boolean))].sort();
+  const defaultVc=DB.veiculos.length?DB.veiculos[0]:null;
   document.getElementById('tab-saidas').innerHTML=`<div class="fc"><h3 style="margin:0 0 12px;font-size:16px;font-weight:700">Nova saída de campo</h3>
   <div class="row"><div style="flex:1"><label class="lb">Cliente</label><select class="sel" id="sf-cl" onchange="updSfMed();updSfLocais()"><option value="">Selecione o cliente</option>${clientes.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select></div>
   <div style="flex:1"><label class="lb">Medição</label><select class="sel" id="sf-m" disabled><option value="">—</option></select></div></div>
@@ -817,13 +817,25 @@ window.novaSaida=function(){
   <div style="position:relative"><input class="inp" id="sf-l" placeholder="Digite ou selecione" list="dl-locais" autocomplete="off">
   <datalist id="dl-locais">${locais.map(l=>`<option value="${esc(l)}">`).join('')}</datalist></div>
   <div id="sf-locais-cli" style="margin-top:4px"></div>
-  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:8px">
-  <div><label class="lb">⛽ Combustível</label><input class="inp" id="sf-c" inputmode="decimal"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-top:8px">
+  <div><label class="lb">🚗 Veículo</label><select class="sel" id="sf-vc" onchange="calcSfComb()">${DB.veiculos.map((v,i)=>`<option value="${v.id}"${i===0?' selected':''}>${esc(v.nome)} (${v.kml} km/l)</option>`).join('')}${!DB.veiculos.length?'<option value="">Nenhum</option>':''}</select></div>
+  <div><label class="lb">📏 KM rodado</label><input class="inp" id="sf-km" type="number" inputmode="decimal" min="0" onchange="calcSfComb()" oninput="calcSfComb()"><div id="sf-comb-calc" style="font-size:.75rem;color:var(--success);margin-top:2px"></div></div>
   <div><label class="lb">🛣️ Pedágio</label><input class="inp" id="sf-p" inputmode="decimal"></div>
   <div><label class="lb">🍽️ Refeição</label><input class="inp" id="sf-r" inputmode="decimal"></div></div>
   <div class="acts" style="margin-top:16px"><button class="btn-secondary" onclick="renderSaidas()">Cancelar</button><button class="btn-primary" onclick="salvarSd()">Salvar</button></div></div>`;
 };
-window.updSfMed=function(){const cl=document.getElementById('sf-cl').value;const sel=document.getElementById('sf-m');sel.disabled=!cl;sel.innerHTML=`<option value="">—</option>${DB.medicoes.filter(m=>normCl(m.consorcio)===cl).sort((a,b)=>mesOrder(b.mesRef)-mesOrder(a.mesRef)).map(m=>`<option value="${m.id}">${esc(m.mesRef)}</option>`).join('')}`;};
+window.calcSfComb=function(){
+  const vcId=document.getElementById('sf-vc')?.value;
+  const km=parseFloat(document.getElementById('sf-km')?.value)||0;
+  const vc=DB.veiculos.find(v=>v.id===vcId);
+  const el=document.getElementById('sf-comb-calc');
+  if(vc&&km>0){const comb=calcComb(km,vc.kml,DB.precoLitro);el.textContent=`= ${fmt(comb)} combustível`;}
+  else{el.textContent='';}
+};
+window.updSfMed=function(){const cl=document.getElementById('sf-cl').value;const sel=document.getElementById('sf-m');sel.disabled=!cl;
+  const meds=DB.medicoes.filter(m=>normCl(m.consorcio)===cl).sort((a,b)=>mesOrder(b.mesRef)-mesOrder(a.mesRef));
+  sel.innerHTML=`<option value="">—</option><option value="__proxima__" style="color:var(--primary);font-weight:600">📌 Próxima medição (mês atual)</option>${meds.map(m=>`<option value="${m.id}">${esc(m.mesRef)}</option>`).join('')}`;
+};
 window.updSfLocais=function(){const cl=document.getElementById('sf-cl').value;if(!cl){document.getElementById('sf-locais-cli').innerHTML='';return;}
   const mids=DB.medicoes.filter(m=>normCl(m.consorcio)===cl).map(m=>m.id);
   const locaisCli=[...new Set(DB.saidas.filter(s=>mids.includes(s.medicaoId)).map(s=>s.local).filter(Boolean))].sort();
@@ -831,9 +843,23 @@ window.updSfLocais=function(){const cl=document.getElementById('sf-cl').value;if
   document.getElementById('sf-locais-cli').innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:4px">${locaisCli.map(l=>`<button type="button" style="padding:3px 10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:12px;color:#1d4ed8;cursor:pointer" onclick="document.getElementById('sf-l').value='${esc(l)}'">${esc(l)}</button>`).join('')}</div>`;
 };
 window.salvarSd=async function(){
-  const e={id:uid(),data:document.getElementById('sf-d').value,local:document.getElementById('sf-l').value,veiculoId:'',km:0,valorLitro:0,
-    combManual:parseBRL(document.getElementById('sf-c').value),pedagio:parseBRL(document.getElementById('sf-p').value),refeicao:parseBRL(document.getElementById('sf-r').value),
-    outros:0,outrosDesc:'',quemPagou:document.getElementById('sf-q').value,medicaoId:document.getElementById('sf-m').value,obs:'',reembolsado:true};
+  const vcId=document.getElementById('sf-vc')?.value||'';
+  const km=parseFloat(document.getElementById('sf-km')?.value)||0;
+  const vc=DB.veiculos.find(v=>v.id===vcId);
+  let medId=document.getElementById('sf-m').value;
+  const cl=document.getElementById('sf-cl').value;
+  // Handle "Próxima medição" — create a temporary medição for current month
+  if(medId==='__proxima__'&&cl){
+    const now=new Date();const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const mesRef=meses[now.getMonth()]+' '+now.getFullYear();
+    let existMed=DB.medicoes.find(m=>normCl(m.consorcio)===cl&&m.mesRef===mesRef);
+    if(!existMed){existMed={id:uid(),consorcio:cl.replace(/^Consórcio\s*/i,''),mesRef,imposto:0};DB.medicoes.push(existMed);}
+    medId=existMed.id;
+  }
+  const e={id:uid(),data:document.getElementById('sf-d').value,local:document.getElementById('sf-l').value,
+    veiculoId:vcId,km,valorLitro:DB.precoLitro,combManual:0,
+    pedagio:parseBRL(document.getElementById('sf-p').value),refeicao:parseBRL(document.getElementById('sf-r').value),
+    outros:0,outrosDesc:'',quemPagou:document.getElementById('sf-q').value,medicaoId:medId,obs:'',reembolsado:true};
   if(!e.data||!e.local)return alert('Preencha data e local');DB.saidas.push(e);await saveDB('Saída criada',e.local+' '+e.data);renderSaidas();
 };
 window.delSd=async function(id){if(confirm('Excluir esta saída?')){DB.saidas=DB.saidas.filter(x=>x.id!==id);await saveDB('Saída excluída',id);renderSaidas();}};
@@ -1421,7 +1447,7 @@ window.renderImpPreview=function(){
       <td style="padding:4px 6px"><select class="sel imp-ed-tipo" data-idx="${i}" style="padding:4px 6px;font-size:.8rem" onchange="window._impData.items[${i}]._tipo=this.value">${TIPOS_REL.map(t=>`<option${it._tipo===t?' selected':''}>${t}</option>`).join('')}</select></td>
       <td style="padding:4px 6px"><input class="inp" value="${it.preco}" style="padding:4px 8px;font-size:.85rem;text-align:right;width:70px" onchange="window._impData.items[${i}].preco=parseFloat(this.value)||0;window._impData.items[${i}].valor=window._impData.items[${i}].preco*window._impData.items[${i}].qtd;renderImpPreview()"></td>
       <td style="padding:4px 6px"><input class="inp" value="${it.qtd}" type="number" style="padding:4px 8px;font-size:.85rem;text-align:right;width:55px" onchange="window._impData.items[${i}].qtd=parseInt(this.value)||0;window._impData.items[${i}].valor=window._impData.items[${i}].preco*window._impData.items[${i}].qtd;renderImpPreview()"></td>
-      <td style="padding:6px 8px;text-align:right;font-weight:600">${fmt(it.valor)}</td><td style="padding:6px 8px;text-align:center">${dupTag}</td></tr>`;
+      <td style="padding:6px 8px;text-align:right;font-weight:600">${fmt(it.valor)}</td></tr>`;
     });
     prev+=`<tr style="background:#e2e8f0;font-weight:700"><td style="padding:8px"></td><td colspan="3" style="padding:8px">TOTAL</td><td style="padding:8px;text-align:right">${totalQtd}</td><td style="padding:8px;text-align:right">${fmt(totalVal)}</td><td></td></tr></table>`;
 
