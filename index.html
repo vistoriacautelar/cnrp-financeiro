@@ -564,10 +564,12 @@ function renderFatCard(f){
     if(ss.length){
       h+=`<h4 style="font-size:.85rem;font-weight:600;margin-bottom:6px"><i class="fa-solid fa-car"></i> Saídas de campo (${ss.length})</h4>
       <table style="width:100%;border-collapse:collapse;font-size:.8rem;margin-bottom:12px">
-      <tr style="background:#f1f5f9"><th style="padding:4px 6px;text-align:left">Data</th><th style="padding:4px 6px;text-align:left">Local</th><th style="padding:4px 6px;text-align:right">⛽</th><th style="padding:4px 6px;text-align:right">🛣️</th><th style="padding:4px 6px;text-align:right">🍽️</th><th style="padding:4px 6px;text-align:right">Total</th></tr>`;
+      <tr style="background:#f1f5f9"><th style="padding:4px 6px;text-align:left">Data</th><th style="padding:4px 6px;text-align:left">Local</th><th style="padding:4px 6px;text-align:right">⛽</th><th style="padding:4px 6px;text-align:right">🛣️</th><th style="padding:4px 6px;text-align:right">🍽️</th><th style="padding:4px 6px;text-align:right">Total</th><th style="padding:4px 6px;width:30px"></th></tr>`;
       ss.forEach((sd,i)=>{const v=DB.veiculos.find(x=>x.id===sd.veiculoId);const comb=v?calcComb(sd.km,v.kml,sd.valorLitro):(sd.combManual||0);const t=getTot(sd);
-        h+=`<tr style="background:${i%2?'#f8fafc':'#fff'}"><td style="padding:3px 6px">${fmtD(sd.data)}</td><td style="padding:3px 6px">${esc(sd.local)}</td><td style="padding:3px 6px;text-align:right">${fmt(comb)}</td><td style="padding:3px 6px;text-align:right">${fmt(sd.pedagio)}</td><td style="padding:3px 6px;text-align:right">${fmt(sd.refeicao)}</td><td style="padding:3px 6px;text-align:right;font-weight:600">${fmt(t)}</td></tr>`;});
-      h+=`<tr style="background:#e2e8f0;font-weight:700"><td colspan="5" style="padding:4px 6px">TOTAL CAMPO</td><td style="padding:4px 6px;text-align:right">${fmt(totCampo)}</td></tr></table>`;
+        const sdColabs=(sd.colaboradores||[]).map(cid=>DB.colaboradores.find(cb=>cb.id===cid)?.nome).filter(Boolean);
+        const moLinked=DB.maoDeObra.filter(m=>m.saidaId===sd.id);
+        h+=`<tr style="background:${i%2?'#f8fafc':'#fff'}"><td style="padding:3px 6px">${fmtD(sd.data)}</td><td style="padding:3px 6px">${esc(sd.local)}${sdColabs.length?`<div style="font-size:.7rem;color:#7c3aed">${sdColabs.join(', ')}</div>`:''}</td><td style="padding:3px 6px;text-align:right">${fmt(comb)}</td><td style="padding:3px 6px;text-align:right">${fmt(sd.pedagio)}</td><td style="padding:3px 6px;text-align:right">${fmt(sd.refeicao)}</td><td style="padding:3px 6px;text-align:right;font-weight:600">${fmt(t)}</td><td style="padding:3px 6px;text-align:center"><button class="btn-icon edit" style="font-size:.75rem" onclick="event.stopPropagation();editSaidaColabs('${sd.id}')"><i class="fa-solid fa-users"></i></button></td></tr>`;});
+      h+=`<tr style="background:#e2e8f0;font-weight:700"><td colspan="5" style="padding:4px 6px">TOTAL CAMPO</td><td></td><td style="padding:4px 6px;text-align:right">${fmt(totCampo)}</td></tr></table>`;
     }
 
     // Despesas gerais
@@ -1890,6 +1892,49 @@ window.salvarColab=async function(editId){
   await saveDB('Colaborador '+(editId?'editado':'criado'),d.nome);closeModal();renderConfig();
 };
 window.delColab=async function(id){if(confirm('Excluir?')){DB.colaboradores=DB.colaboradores.filter(x=>x.id!==id);await saveDB('Colaborador excluído','');closeModal();renderConfig();}};
+
+window.editSaidaColabs=function(saidaId){
+  const sd=DB.saidas.find(x=>x.id===saidaId);if(!sd)return;
+  const currentColabs=sd.colaboradores||[];
+  const med=DB.medicoes.find(m=>m.id===sd.medicaoId);
+  const clNome=med?normCl(med.consorcio):'';
+  document.getElementById('modal-container').innerHTML=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:500px">
+  <h3 style="font-size:1rem;font-weight:700;margin-bottom:4px"><i class="fa-solid fa-users"></i> Colaboradores — ${fmtD(sd.data)}</h3>
+  <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:16px">${esc(sd.local)} · ${esc(clNome)}</p>
+  ${DB.colaboradores.length?`<div style="display:flex;flex-direction:column;gap:8px">${DB.colaboradores.map(cb=>{
+    const checked=currentColabs.includes(cb.id);
+    const totalDia=(cb.valorDia||0)+(cb.conducao||0);
+    return `<label style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:${checked?'#eff6ff':'#f8fafc'};border:1px solid ${checked?'var(--primary)':'var(--border)'};border-radius:8px;cursor:pointer">
+    <input type="checkbox" class="ec-chk" value="${cb.id}"${checked?' checked':''}>
+    <div style="flex:1"><strong>${esc(cb.nome)}</strong> <span style="color:var(--text-muted);font-size:.8rem">· ${esc(cb.funcao)}</span></div>
+    <div style="text-align:right;font-size:.85rem"><div style="font-weight:600">${totalDia?fmt(totalDia)+'/dia':'Voluntário'}</div><div style="font-size:.7rem;color:var(--text-muted)">Pago por ${esc(cb.quemPaga||'Tatiana')}</div></div></label>`;
+  }).join('')}</div>`:`<p style="color:var(--text-muted)">Nenhum colaborador cadastrado. Cadastre em Config.</p>`}
+  <div class="acts" style="margin-top:16px"><button class="btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="salvarSaidaColabs('${saidaId}')"><i class="fa-solid fa-check"></i> Salvar</button></div></div></div>`;
+};
+
+window.salvarSaidaColabs=async function(saidaId){
+  const sd=DB.saidas.find(x=>x.id===saidaId);if(!sd)return;
+  const oldColabs=sd.colaboradores||[];
+  const newColabs=[...document.querySelectorAll('.ec-chk:checked')].map(x=>x.value);
+  const med=DB.medicoes.find(m=>m.id===sd.medicaoId);
+  const clNome=med?normCl(med.consorcio):'';
+  // Update saída
+  sd.colaboradores=newColabs;
+  // Remove MO entries for unchecked colaboradores
+  const removed=oldColabs.filter(id=>!newColabs.includes(id));
+  if(removed.length)DB.maoDeObra=DB.maoDeObra.filter(m=>!(m.saidaId===saidaId&&removed.includes(DB.colaboradores.find(cb=>cb.nome===m.nome)?.id)));
+  // Also remove by name match for safety
+  removed.forEach(cbId=>{const cb=DB.colaboradores.find(x=>x.id===cbId);if(cb)DB.maoDeObra=DB.maoDeObra.filter(m=>!(m.saidaId===saidaId&&m.nome===cb.nome));});
+  // Add MO entries for newly checked
+  const added=newColabs.filter(id=>!oldColabs.includes(id));
+  added.forEach(cbId=>{
+    const cb=DB.colaboradores.find(x=>x.id===cbId);if(!cb)return;
+    const totalDia=(cb.valorDia||0)+(cb.conducao||0);
+    DB.maoDeObra.push({id:uid(),data:sd.data,clienteNome:clNome,medicaoId:sd.medicaoId,mesRef:med?med.mesRef:'',nome:cb.nome,funcao:cb.funcao,valor:totalDia,quemPagou:cb.quemPaga||'Tatiana',autoGerado:true,saidaId:saidaId});
+  });
+  await saveDB('Colaboradores atualizados',fmtD(sd.data)+' '+sd.local);
+  closeModal();renderFat();
+};
 
 window.resetAll=async function(){if(confirm('Resetar TUDO?')){DB={medicoes:[],saidas:[],obrigacoes:[],provisoes:[],veiculos:[],faturamento:[],precoLitro:0};await saveDB();await importInitial();}};
 </script>
