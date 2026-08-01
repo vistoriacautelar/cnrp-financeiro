@@ -521,7 +521,20 @@ function sortFat(arr){return[...arr].sort((a,b)=>mesOrder(b.mesRef)-mesOrder(a.m
 function renderFatCard(f){
     const isPago=f.status==='Pago';
     const arqs=f.arquivos||[];
-    let h=`<div class="fat-card ${isPago?'st-pago':'st-pend'}">
+    const cl=normCl(f.clienteNorm||f.cliente);
+    const clRaw=f.clienteNorm||f.cliente;
+    const med=DB.medicoes.find(m=>(m.consorcio===clRaw||normCl(m.consorcio)===cl)&&f.mesRef&&f.mesRef.includes(m.mesRef));
+    const medId=med?med.id:null;
+    // Costs
+    const ss=medId?DB.saidas.filter(s=>s.medicaoId===medId).sort((a,b)=>(a.data||'').localeCompare(b.data||'')):[];
+    const dgs=DB.despesasGerais.filter(d=>d.medicaoId===medId||(normCl(d.clienteNome)===cl&&d.mesRef===f.mesRef));
+    const mos=DB.maoDeObra.filter(d=>d.medicaoId===medId||(normCl(d.clienteNome)===cl&&d.mesRef===f.mesRef));
+    let totCampo=ss.reduce((s,sd)=>s+getTot(sd),0);
+    let totDG=dgs.reduce((s,d)=>s+d.valor,0);
+    let totMO=mos.reduce((s,d)=>s+d.valor,0);
+    let totCustos=totCampo+totDG+totMO;
+
+    let h=`<div class="fat-card ${isPago?'st-pago':'st-pend'}" style="cursor:pointer" onclick="toggleDetail('${f.id}')">
       <div class="card-header">
         <div><h4 style="font-size:1rem;color:var(--text-dark);margin-bottom:2px">${esc(f.mesRef)}</h4>
         <span style="font-size:.8rem;color:var(--text-muted)">${f.nf?`NF: ${esc(f.nf)}`:'Sem NF'}</span></div>
@@ -529,7 +542,6 @@ function renderFatCard(f){
         <span class="status-tag ${isPago?'pago':'pend'}">${f.status}</span></div>
       </div>`;
 
-    // Details grid
     const hasDetails=(f.envioMedicao&&f.envioMedicao!=='NaT')||(f.emissaoNF&&f.emissaoNF!=='NaT')||(f.prevPagamento&&f.prevPagamento!=='NaT')||(f.dataDeposito&&f.dataDeposito!=='NaT');
     if(hasDetails){
       h+=`<div class="card-details">`;
@@ -541,9 +553,48 @@ function renderFatCard(f){
       h+=`</div>`;
     }
 
+    // Costs summary line
+    if(totCustos>0){h+=`<div style="font-size:.8rem;color:var(--text-muted);display:flex;gap:12px;flex-wrap:wrap">${totCampo?`<span><i class="fa-solid fa-car"></i> ${fmt(totCampo)}</span>`:''}${totDG?`<span><i class="fa-solid fa-receipt"></i> ${fmt(totDG)}</span>`:''}${totMO?`<span><i class="fa-solid fa-helmet-safety"></i> ${fmt(totMO)}</span>`:''}<span style="font-weight:600">Total: ${fmt(totCustos)}</span></div>`;}
+
+    // ══ Expandable detail panel ══
+    h+=`<div id="det-${f.id}" style="display:none" onclick="event.stopPropagation()">
+    <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:8px">`;
+
+    // Saídas de campo
+    if(ss.length){
+      h+=`<h4 style="font-size:.85rem;font-weight:600;margin-bottom:6px"><i class="fa-solid fa-car"></i> Saídas de campo (${ss.length})</h4>
+      <table style="width:100%;border-collapse:collapse;font-size:.8rem;margin-bottom:12px">
+      <tr style="background:#f1f5f9"><th style="padding:4px 6px;text-align:left">Data</th><th style="padding:4px 6px;text-align:left">Local</th><th style="padding:4px 6px;text-align:right">⛽</th><th style="padding:4px 6px;text-align:right">🛣️</th><th style="padding:4px 6px;text-align:right">🍽️</th><th style="padding:4px 6px;text-align:right">Total</th></tr>`;
+      ss.forEach((sd,i)=>{const v=DB.veiculos.find(x=>x.id===sd.veiculoId);const comb=v?calcComb(sd.km,v.kml,sd.valorLitro):(sd.combManual||0);const t=getTot(sd);
+        h+=`<tr style="background:${i%2?'#f8fafc':'#fff'}"><td style="padding:3px 6px">${fmtD(sd.data)}</td><td style="padding:3px 6px">${esc(sd.local)}</td><td style="padding:3px 6px;text-align:right">${fmt(comb)}</td><td style="padding:3px 6px;text-align:right">${fmt(sd.pedagio)}</td><td style="padding:3px 6px;text-align:right">${fmt(sd.refeicao)}</td><td style="padding:3px 6px;text-align:right;font-weight:600">${fmt(t)}</td></tr>`;});
+      h+=`<tr style="background:#e2e8f0;font-weight:700"><td colspan="5" style="padding:4px 6px">TOTAL CAMPO</td><td style="padding:4px 6px;text-align:right">${fmt(totCampo)}</td></tr></table>`;
+    }
+
+    // Despesas gerais
+    if(dgs.length){
+      h+=`<h4 style="font-size:.85rem;font-weight:600;margin-bottom:6px"><i class="fa-solid fa-receipt"></i> Despesas gerais (${dgs.length})</h4>`;
+      dgs.forEach(d=>{h+=`<div style="display:flex;justify-content:space-between;font-size:.8rem;padding:3px 0;border-bottom:1px solid #f1f5f9"><span>${fmtD(d.data)} · ${esc(d.descricao)}</span><span style="font-weight:600">${fmt(d.valor)}</span></div>`;});
+      h+=`<div style="display:flex;justify-content:space-between;font-size:.8rem;font-weight:700;padding:4px 0;margin-bottom:8px"><span>TOTAL DESP. GERAIS</span><span>${fmt(totDG)}</span></div>`;
+    }
+
+    // Mão de obra
+    if(mos.length){
+      h+=`<h4 style="font-size:.85rem;font-weight:600;margin-bottom:6px"><i class="fa-solid fa-helmet-safety"></i> Mão de obra (${mos.length})</h4>`;
+      mos.forEach(d=>{h+=`<div style="display:flex;justify-content:space-between;font-size:.8rem;padding:3px 0;border-bottom:1px solid #f1f5f9"><span>${esc(d.nome)} · ${esc(d.funcao)} · ${fmtD(d.data)}</span><span style="font-weight:600">${fmt(d.valor)}</span></div>`;});
+      h+=`<div style="display:flex;justify-content:space-between;font-size:.8rem;font-weight:700;padding:4px 0;margin-bottom:8px"><span>TOTAL MÃO DE OBRA</span><span>${fmt(totMO)}</span></div>`;
+    }
+
+    // Resumo total
+    h+=`<div style="background:#f1f5f9;border-radius:8px;padding:10px;font-size:.85rem;margin-top:4px">
+    <div style="display:flex;justify-content:space-between"><span>Medição</span><span style="font-weight:600">${fmt(f.valorTotal)}</span></div>
+    <div style="display:flex;justify-content:space-between"><span>Custos totais</span><span style="font-weight:600;color:var(--danger)">${fmt(totCustos)}</span></div>
+    <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:4px;margin-top:4px"><span style="font-weight:700">Resultado</span><span style="font-weight:700;color:${(f.valorTotal-totCustos)>=0?'var(--success)':'var(--danger)'}">${fmt(f.valorTotal-totCustos)}</span></div></div>`;
+
+    h+=`</div></div>`;
+
     // Arquivos
     if(arqs.length>0){
-      h+=`<div style="display:flex;gap:8px;flex-wrap:wrap">`;
+      h+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px" onclick="event.stopPropagation()">`;
       arqs.forEach((a,i)=>{
         const isImg=a.nome.match(/\.(jpg|jpeg|png|gif|webp)$/i);
         const tipoBg=a.tipo==='Nota Fiscal'?'var(--success)':a.tipo==='Medição'?'var(--primary)':'var(--text-muted)';
@@ -551,13 +602,12 @@ function renderFatCard(f){
         h+=`<div style="position:relative;display:flex;flex-direction:column;align-items:center;gap:2px">
         ${isImg?`<img src="${a.url}" class="nf-thumb" onclick="viewFile('${a.url}')">`:`<div class="nf-thumb" style="display:flex;align-items:center;justify-content:center;font-size:18px;background:#f1f5f9" onclick="viewFile('${a.url}')"><i class="fa-solid ${tipoIcon}" style="color:${tipoBg}"></i></div>`}
         <span style="font-size:.6rem;font-weight:600;color:${tipoBg};text-transform:uppercase">${esc(a.tipo||'Arquivo')}</span>
-        <button style="position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;border:none;border-radius:50%;width:16px;height:16px;font-size:9px;display:flex;align-items:center;justify-content:center;cursor:pointer" onclick="delNF('${f.id}','${a.path}',${i})">✕</button></div>`;
+        <button style="position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;border:none;border-radius:50%;width:16px;height:16px;font-size:9px;display:flex;align-items:center;justify-content:center;cursor:pointer" onclick="event.stopPropagation();delNF('${f.id}','${a.path}',${i})">✕</button></div>`;
       });
       h+=`</div>`;
     }
 
-    // Actions
-    h+=`<div class="card-actions">
+    h+=`<div class="card-actions" onclick="event.stopPropagation()">
       <button class="attach-btn" onclick="uploadNF('${f.id}')"><i class="fa-solid fa-paperclip"></i> Anexar documento</button>
       <div style="display:flex;gap:4px"><span id="upload-status-${f.id}" style="font-size:.7rem"></span>
       <button class="btn-icon check" title="${isPago?'Marcar pendente':'Marcar como pago'}" onclick="toggleFat('${f.id}')"><i class="fa-solid ${isPago?'fa-arrow-rotate-left':'fa-square-check'}"></i></button>
