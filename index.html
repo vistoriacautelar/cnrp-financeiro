@@ -39,7 +39,8 @@
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
-        body { display: flex; height: 100vh; background-color: var(--bg-app); color: var(--text-base); overflow: hidden; }
+        body { background-color: var(--bg-app); color: var(--text-base); min-height: 100vh; margin: 0; }
+        body.app-loaded { display: flex; height: 100vh; overflow: hidden; }
 
         /* SCROLLBAR CUSTOMIZATION */
         ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -382,22 +383,24 @@ window.doLogout=function(){if(unsubSnap)unsubSnap();signOut(auth);};
 let currentUserData=null;
 onAuthStateChanged(auth,async(user)=>{
   if(user){
-    // Check role — only master can access
+    // Try to check role, but don't block login if it fails
+    currentUserData={uid:user.uid,email:user.email,nome:user.email};
     try{
       const userDoc=await getDoc(doc(firestore,'users',user.uid));
       if(userDoc.exists()){
-        currentUserData={uid:user.uid,email:user.email,...userDoc.data()};
-        if(currentUserData.role&&currentUserData.role!=='master'){
+        const ud=userDoc.data();
+        currentUserData={uid:user.uid,email:user.email,nome:ud.nome||user.email,role:ud.role||'master',...ud};
+        if(ud.role&&ud.role!=='master'){
           document.getElementById('login-err').textContent='Acesso restrito a usuários master.';
           document.getElementById('login-err').style.display='block';
           signOut(auth);return;
         }
-      }else{currentUserData={uid:user.uid,email:user.email,nome:user.email};}
-    }catch(e){console.error('Role check error:',e);currentUserData={uid:user.uid,email:user.email,nome:user.email};}
-    document.getElementById('login-screen').style.display='none';document.getElementById('app').style.display='flex';document.getElementById('user-info').textContent=currentUserData?.nome||currentUserData?.email||'';startSync();loadVCData();
+      }
+    }catch(e){console.warn('Role check failed (continuing as master):',e);}
+    document.getElementById('login-screen').style.display='none';document.getElementById('app').style.display='flex';document.body.classList.add('app-loaded');document.getElementById('user-info').textContent=currentUserData?.nome||currentUserData?.email||'';startSync();loadVCData();
   }else{
     currentUserData=null;
-    document.getElementById('login-screen').style.display='flex';document.getElementById('app').style.display='none';if(unsubSnap)unsubSnap();
+    document.getElementById('login-screen').style.display='flex';document.getElementById('app').style.display='none';document.body.classList.remove('app-loaded');if(unsubSnap)unsubSnap();
   }
 });
 
