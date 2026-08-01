@@ -311,7 +311,7 @@ const firestore=getFirestore(app);
 const storage=getStorage(app);
 
 // ═══════ DATA ═══════
-let DB={medicoes:[],saidas:[],obrigacoes:[],provisoes:[],veiculos:[],faturamento:[],precoLitro:0,ajudaCustoVeiculo:1000,producao:[],valoresRelatorio:[],logs:[],despesasGerais:[],maoDeObra:[]};
+let DB={medicoes:[],saidas:[],obrigacoes:[],provisoes:[],veiculos:[],faturamento:[],precoLitro:0,ajudaCustoVeiculo:1000,producao:[],valoresRelatorio:[],logs:[],despesasGerais:[],maoDeObra:[],colaboradores:[]};
 const DOC_REF=doc(firestore,'financeiro','data');
 let unsubSnap=null;
 
@@ -349,7 +349,7 @@ function startSync(){
       const d=snap.data();
       DB.medicoes=d.medicoes||[];DB.saidas=d.saidas||[];DB.obrigacoes=d.obrigacoes||[];
       DB.provisoes=d.provisoes||[];DB.veiculos=d.veiculos||[];DB.faturamento=d.faturamento||[];
-      DB.precoLitro=d.precoLitro||0;DB.ajudaCustoVeiculo=d.ajudaCustoVeiculo??1000;DB.producao=d.producao||[];DB.valoresRelatorio=d.valoresRelatorio||[];DB.logs=d.logs||[];DB.despesasGerais=d.despesasGerais||[];DB.maoDeObra=d.maoDeObra||[];
+      DB.precoLitro=d.precoLitro||0;DB.ajudaCustoVeiculo=d.ajudaCustoVeiculo??1000;DB.producao=d.producao||[];DB.valoresRelatorio=d.valoresRelatorio||[];DB.logs=d.logs||[];DB.despesasGerais=d.despesasGerais||[];DB.maoDeObra=d.maoDeObra||[];DB.colaboradores=d.colaboradores||[];
       document.getElementById('sync-status').innerHTML='<i class="fa-solid fa-cloud-arrow-up"></i> Sincronizado';document.getElementById('sync-status').style.color='#34d399';
       // Skip render if this is our own write (within 3 seconds)
       if(Date.now()-_lastSaveTs<3000){/* own write, skip render */}else{render();}
@@ -584,11 +584,49 @@ function renderFatCard(f){
       h+=`<div style="display:flex;justify-content:space-between;font-size:.8rem;font-weight:700;padding:4px 0;margin-bottom:8px"><span>TOTAL MÃO DE OBRA</span><span>${fmt(totMO)}</span></div>`;
     }
 
+    // Provisões vinculadas
+    const provs=DB.provisoes.filter(p=>{const ob=DB.obrigacoes.find(o=>o.id===p.obrigacaoId);return ob&&(p.ref||'').toLowerCase().includes((clRaw||'').toLowerCase().slice(0,4));});
+    const totProv=provs.reduce((s,p)=>s+(p.valorReal!=null?p.valorReal:p.valor),0);
+    if(provs.length){
+      h+=`<h4 style="font-size:.85rem;font-weight:600;margin-bottom:6px"><i class="fa-solid fa-clipboard-list"></i> Previsões vinculadas</h4>`;
+      provs.forEach(p=>{const ob=DB.obrigacoes.find(o=>o.id===p.obrigacaoId);const vr=p.valorReal!=null?p.valorReal:p.valor;
+        h+=`<div style="display:flex;justify-content:space-between;font-size:.8rem;padding:3px 0;border-bottom:1px solid #f1f5f9"><span>${esc(ob?ob.nome:'—')} · ${p.periodo}</span><span style="font-weight:600">${fmt(vr)}</span></div>`;});
+      h+=`<div style="display:flex;justify-content:space-between;font-size:.8rem;font-weight:700;padding:4px 0;margin-bottom:8px"><span>TOTAL PREVISÕES</span><span>${fmt(totProv)}</span></div>`;
+    }
+
+    // Custos por pagador
+    const custTat=ss.filter(s=>(s.quemPagou||'Tatiana')==='Tatiana').reduce((s,sd)=>s+getTot(sd),0)
+      +dgs.filter(d=>(d.quemPagou||'Tatiana')==='Tatiana').reduce((s,d)=>s+d.valor,0)
+      +mos.filter(d=>(d.quemPagou||'Tatiana')==='Tatiana').reduce((s,d)=>s+d.valor,0);
+    const custRon=ss.filter(s=>s.quemPagou==='Ronaldo').reduce((s,sd)=>s+getTot(sd),0)
+      +dgs.filter(d=>d.quemPagou==='Ronaldo').reduce((s,d)=>s+d.valor,0)
+      +mos.filter(d=>d.quemPagou==='Ronaldo').reduce((s,d)=>s+d.valor,0);
+    const totAllCustos=totCustos+totProv;
+    const imposto=f.imposto||0;
+    const ajuda=DB.ajudaCustoVeiculo||0;
+
     // Resumo total
-    h+=`<div style="background:#f1f5f9;border-radius:8px;padding:10px;font-size:.85rem;margin-top:4px">
-    <div style="display:flex;justify-content:space-between"><span>Medição</span><span style="font-weight:600">${fmt(f.valorTotal)}</span></div>
-    <div style="display:flex;justify-content:space-between"><span>Custos totais</span><span style="font-weight:600;color:var(--danger)">${fmt(totCustos)}</span></div>
-    <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:4px;margin-top:4px"><span style="font-weight:700">Resultado</span><span style="font-weight:700;color:${(f.valorTotal-totCustos)>=0?'var(--success)':'var(--danger)'}">${fmt(f.valorTotal-totCustos)}</span></div></div>`;
+    h+=`<div style="background:#f1f5f9;border-radius:8px;padding:12px;font-size:.85rem;margin-top:8px;line-height:1.8">
+    <div style="font-weight:700;margin-bottom:4px">Resumo de custos</div>
+    <div style="display:flex;justify-content:space-between"><span>Despesas Tatiana</span><span>${fmt(custTat)}</span></div>
+    <div style="display:flex;justify-content:space-between"><span>Despesas Ronaldo</span><span>${fmt(custRon)}</span></div>
+    ${totProv?`<div style="display:flex;justify-content:space-between"><span>Previsões (func./reembolso)</span><span>${fmt(totProv)}</span></div>`:''}
+    <div style="display:flex;justify-content:space-between"><span>Imposto</span><span>${fmt(imposto)}</span></div>
+    <div style="display:flex;justify-content:space-between"><span>Ajuda custo veículo</span><span>${fmt(ajuda)}</span></div>
+    <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:4px;margin-top:4px;font-weight:700"><span>Total custos</span><span style="color:var(--danger)">${fmt(totAllCustos+imposto+ajuda)}</span></div>
+    <div style="display:flex;justify-content:space-between;margin-top:8px"><span>Medição</span><span style="font-weight:600">${fmt(f.valorTotal)}</span></div>
+    <div style="display:flex;justify-content:space-between"><span>Pagamento (−imposto)</span><span>${fmt(f.valorTotal-imposto)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-weight:700;color:var(--success)"><span>Líquido</span><span>${fmt(f.valorTotal-imposto-custTat-custRon-totProv-ajuda)}</span></div>
+    </div>`;
+
+    // Divisão
+    const liq=f.valorTotal-imposto-custTat-custRon-totProv-ajuda;
+    const metade=liq/2;
+    const tatRecebe=metade+custTat+ajuda+totProv;
+    const ronRecebe=metade+custRon-ajuda;
+    h+=`<div style="display:flex;gap:16px;margin-top:8px">
+    <div style="flex:1;background:var(--success-bg);border-radius:8px;padding:10px;text-align:center"><div style="font-size:.75rem;color:var(--success-text);font-weight:600">TATIANA</div><div style="font-size:1.1rem;font-weight:700;color:var(--success)">${fmt(tatRecebe)}</div><div style="font-size:.7rem;color:var(--text-muted)">50% + reembolso + ajuda${totProv?' + prev':''}</div></div>
+    <div style="flex:1;background:#eff6ff;border-radius:8px;padding:10px;text-align:center"><div style="font-size:.75rem;color:var(--primary);font-weight:600">RONALDO</div><div style="font-size:1.1rem;font-weight:700;color:var(--primary)">${fmt(ronRecebe)}</div><div style="font-size:.7rem;color:var(--text-muted)">50% + reembolso − ajuda</div></div></div>`;
 
     h+=`</div></div>`;
 
@@ -832,7 +870,7 @@ function renderSaidas(){
   const el=document.getElementById('tab-saidas');
   const clientes=[...new Set(DB.medicoes.map(m=>normCl(m.consorcio)))].sort();
   const mesesDoCliente=window.sfCliente?DB.medicoes.filter(m=>normCl(m.consorcio)===window.sfCliente).sort((a,b)=>mesOrder(b.mesRef)-mesOrder(a.mesRef)):[];
-  document.getElementById('top-metrics').innerHTML=`<button class="btn-danger" id="btn-del-saidas" style="display:none;margin-right:8px" onclick="delSelectedSaidas()"><i class="fa-solid fa-trash"></i> Excluir selecionados</button><button class="btn-secondary" onclick="novaDespGeral()" style="margin-right:6px"><i class="fa-solid fa-receipt"></i> Despesa geral</button><button class="btn-secondary" onclick="novaMaoDeObra()" style="margin-right:6px"><i class="fa-solid fa-helmet-safety"></i> Mão de obra</button><button class="btn-primary" onclick="novaSaida()"><i class="fa-solid fa-plus"></i> Nova saída</button>`;
+  document.getElementById('top-metrics').innerHTML=`<button class="btn-danger" id="btn-del-saidas" style="display:none;margin-right:8px" onclick="delSelectedSaidas()"><i class="fa-solid fa-trash"></i> Excluir selecionados</button><button class="btn-secondary" onclick="novaDespGeral()" style="margin-right:6px"><i class="fa-solid fa-receipt"></i> Despesa geral</button><button class="btn-secondary" onclick="novaMaoDeObra()" style="margin-right:6px"><i class="fa-solid fa-helmet-safety"></i> Mão de obra</button><button class="btn-secondary" onclick="importMaoDeObra()" style="margin-right:6px"><i class="fa-solid fa-file-excel"></i> Importar MO</button><button class="btn-primary" onclick="novaSaida()"><i class="fa-solid fa-plus"></i> Nova saída</button>`;
   const fl=DB.saidas.filter(x=>{
     if(!window.sfCliente&&!window.sfMed)return true;
     if(window.sfMed)return x.medicaoId===window.sfMed;
@@ -871,7 +909,7 @@ function renderSaidas(){
     h+=`<div class="data-list">`;
     dgFilt.forEach(d=>{
       h+=`<div class="data-row"><input type="checkbox" class="chk-saida" value="dg_${d.id}" style="margin-right:8px;flex-shrink:0"><div class="data-col-main"><div class="data-row-title">${fmtD(d.data)} · <span style="color:var(--primary)">${esc(normCl(d.clienteNome))} ${esc(d.mesRef||'')}</span></div>
-      <div class="data-row-desc">${esc(d.descricao)}</div></div><div class="data-col-val">${fmt(d.valor)}<i class="fa-solid fa-trash btn-icon-danger" onclick="delDespGeral('${d.id}')"></i></div></div>`;
+      <div class="data-row-desc">${esc(d.descricao)}${d.quemPagou?` · <span style="color:#7c3aed">${esc(d.quemPagou)}</span>`:""}</div></div><div class="data-col-val">${fmt(d.valor)}<i class="fa-solid fa-trash btn-icon-danger" onclick="delDespGeral('${d.id}')"></i></div></div>`;
     });
     h+=`</div></div>`;
   }
@@ -889,7 +927,7 @@ function renderSaidas(){
     h+=`<div class="data-list">`;
     moFilt.forEach(d=>{
       h+=`<div class="data-row"><input type="checkbox" class="chk-saida" value="mo_${d.id}" style="margin-right:8px;flex-shrink:0"><div class="data-col-main"><div class="data-row-title"><strong>${esc(d.nome)}</strong> · ${esc(d.funcao)} · <span style="color:var(--primary)">${esc(normCl(d.clienteNome))} ${esc(d.mesRef||'')}</span></div>
-      <div class="data-row-desc">${fmtD(d.data)}</div></div><div class="data-col-val">${fmt(d.valor)}<i class="fa-solid fa-trash btn-icon-danger" onclick="delMaoDeObra('${d.id}')"></i></div></div>`;
+      <div class="data-row-desc">${fmtD(d.data)}${d.quemPagou?` · <span style="color:#7c3aed">${esc(d.quemPagou)}</span>`:""}</div></div><div class="data-col-val">${d.valor?fmt(d.valor):"Voluntário"}<i class="fa-solid fa-trash btn-icon-danger" onclick="delMaoDeObra('${d.id}')"></i></div></div>`;
     });
     h+=`</div></div>`;
   }
@@ -913,6 +951,8 @@ window.novaSaida=function(){
   <div><label class="lb">📏 KM rodado</label><input class="inp" id="sf-km" type="number" inputmode="decimal" min="0" onchange="calcSfComb()" oninput="calcSfComb()"><div id="sf-comb-calc" style="font-size:.75rem;color:var(--success);margin-top:2px"></div></div>
   <div><label class="lb">🛣️ Pedágio</label><input class="inp" id="sf-p" inputmode="decimal"></div>
   <div><label class="lb">🍽️ Refeição</label><input class="inp" id="sf-r" inputmode="decimal"></div></div>
+  ${DB.colaboradores.length?`<label class="lb">Colaboradores presentes</label>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">${DB.colaboradores.map(cb=>`<label style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:#f8fafc;border:1px solid var(--border);border-radius:6px;font-size:.85rem;cursor:pointer"><input type="checkbox" class="sf-colab" value="${cb.id}"> ${esc(cb.nome)}${cb.valorDia?` <span style="color:var(--text-muted);font-size:.75rem">(${fmt(cb.valorDia)}/dia)</span>`:' <span style="color:var(--text-muted);font-size:.75rem">(vol.)</span>'}</label>`).join('')}</div>`:''}
   <div class="acts" style="margin-top:16px"><button class="btn-secondary" onclick="renderSaidas()">Cancelar</button><button class="btn-primary" onclick="salvarSd()">Salvar</button></div></div>`;
 };
 window.calcSfComb=function(){
@@ -947,11 +987,24 @@ window.salvarSd=async function(){
     if(!existMed){existMed={id:uid(),consorcio:cl.replace(/^Consórcio\s*/i,''),mesRef,imposto:0};DB.medicoes.push(existMed);}
     medId=existMed.id;
   }
+  const colabIds=[...document.querySelectorAll('.sf-colab:checked')].map(x=>x.value);
   const e={id:uid(),data:document.getElementById('sf-d').value,local:document.getElementById('sf-l').value,
     veiculoId:vcId,km,valorLitro:DB.precoLitro,combManual:0,
     pedagio:parseBRL(document.getElementById('sf-p').value),refeicao:parseBRL(document.getElementById('sf-r').value),
-    outros:0,outrosDesc:'',quemPagou:document.getElementById('sf-q').value,medicaoId:medId,obs:'',reembolsado:true};
-  if(!e.data||!e.local)return alert('Preencha data e local');DB.saidas.push(e);await saveDB('Saída criada',e.local+' '+e.data);renderSaidas();
+    outros:0,outrosDesc:'',quemPagou:document.getElementById('sf-q').value,medicaoId:medId,obs:'',reembolsado:true,colaboradores:colabIds};
+  if(!e.data||!e.local)return alert('Preencha data e local');
+  DB.saidas.push(e);
+  // Auto-create MO entries for selected colaboradores
+  const clNome=document.getElementById('sf-cl').value;
+  const medObj=DB.medicoes.find(m=>m.id===medId);
+  colabIds.forEach(cbId=>{
+    const cb=DB.colaboradores.find(x=>x.id===cbId);if(!cb)return;
+    const totalDia=(cb.valorDia||0)+(cb.conducao||0);
+    if(totalDia>0||cb.valorDia===0){// include even if zero (volunteer tracking)
+      DB.maoDeObra.push({id:uid(),data:e.data,clienteNome:clNome,medicaoId:medId,mesRef:medObj?medObj.mesRef:'',nome:cb.nome,funcao:cb.funcao,valor:totalDia,quemPagou:cb.quemPaga||'Tatiana',autoGerado:true,saidaId:e.id});
+    }
+  });
+  await saveDB('Saída criada',e.local+' '+e.data+(colabIds.length?' +'+colabIds.length+' colab.':''));renderSaidas();
 };
 window.delSd=async function(id){if(confirm('Excluir esta saída?')){DB.saidas=DB.saidas.filter(x=>x.id!==id);await saveDB('Saída excluída',id);renderSaidas();}};
 
@@ -962,7 +1015,7 @@ window.novaDespGeral=function(){
   document.getElementById('tab-saidas').innerHTML=`<div class="fc"><h3 style="margin:0 0 12px;font-size:16px;font-weight:700"><i class="fa-solid fa-receipt"></i> Nova despesa geral</h3>
   <div class="row"><div style="flex:1"><label class="lb">Cliente</label><select class="sel" id="dg-cl" onchange="updDgMed()"><option value="">Selecione</option>${clientes.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select></div>
   <div style="flex:1"><label class="lb">Medição</label><select class="sel" id="dg-m" disabled><option value="">—</option></select></div></div>
-  <div class="row"><div style="flex:1"><label class="lb">Data</label><input class="inp" type="date" id="dg-d"></div><div style="flex:1"><label class="lb">Valor</label><input class="inp" id="dg-v" inputmode="decimal"></div></div>
+  <div class="row"><div style="flex:1"><label class="lb">Data</label><input class="inp" type="date" id="dg-d"></div><div style="flex:1"><label class="lb">Valor</label><input class="inp" id="dg-v" inputmode="decimal"></div><div style="flex:1"><label class="lb">Quem pagou</label><select class="sel" id="dg-q"><option>Tatiana</option><option>Ronaldo</option></select></div></div>
   <label class="lb">Descrição</label><input class="inp" id="dg-desc" placeholder="Descrição da despesa">
   <div class="acts"><button class="btn-secondary" onclick="renderSaidas()">Cancelar</button><button class="btn-primary" onclick="salvarDespGeral()"><i class="fa-solid fa-check"></i> Salvar</button></div></div>`;
 };
@@ -977,8 +1030,8 @@ window.salvarDespGeral=async function(){
   if(medId==='__proxima__'&&clNome){const now=new Date();const ms=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
     const mr=ms[now.getMonth()]+' '+now.getFullYear();let em=DB.medicoes.find(m=>normCl(m.consorcio)===clNome&&m.mesRef===mr);
     if(!em){em={id:uid(),consorcio:clNome.replace(/^Consórcio\s*/i,''),mesRef:mr,imposto:0};DB.medicoes.push(em);}medId=em.id;}
-  const d={id:uid(),data:document.getElementById('dg-d').value,clienteNome:clNome,medicaoId:medId,mesRef:med?med.mesRef:'',descricao:document.getElementById('dg-desc').value,valor:parseBRL(document.getElementById('dg-v').value)};
-  if(!d.data||!d.clienteNome||d.valor<=0)return alert('Preencha todos os campos');
+  const d={id:uid(),data:document.getElementById('dg-d').value,clienteNome:clNome,medicaoId:medId,mesRef:med?med.mesRef:'',descricao:document.getElementById('dg-desc').value,valor:parseBRL(document.getElementById('dg-v').value),quemPagou:document.getElementById('dg-q').value};
+  if(!d.data||!d.clienteNome)return alert('Preencha data e cliente');
   DB.despesasGerais.push(d);await saveDB('Despesa geral criada',d.descricao);renderSaidas();
 };
 window.delDespGeral=async function(id){if(confirm('Excluir?')){DB.despesasGerais=DB.despesasGerais.filter(x=>x.id!==id);await saveDB('Despesa geral excluída','');renderSaidas();}};
@@ -989,7 +1042,7 @@ window.novaMaoDeObra=function(){
   <div class="row"><div style="flex:1"><label class="lb">Cliente</label><select class="sel" id="mo-cl" onchange="updMoMed()"><option value="">Selecione</option>${clientes.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select></div>
   <div style="flex:1"><label class="lb">Medição</label><select class="sel" id="mo-m" disabled><option value="">—</option></select></div></div>
   <div class="row"><div style="flex:1"><label class="lb">Nome da pessoa</label><input class="inp" id="mo-nome" placeholder="Nome completo"></div><div style="flex:1"><label class="lb">Função</label><input class="inp" id="mo-func" placeholder="Ajudante, pedreiro..."></div></div>
-  <div class="row"><div style="flex:1"><label class="lb">Data</label><input class="inp" type="date" id="mo-d"></div><div style="flex:1"><label class="lb">Valor pago</label><input class="inp" id="mo-v" inputmode="decimal"></div></div>
+  <div class="row"><div style="flex:1"><label class="lb">Data</label><input class="inp" type="date" id="mo-d"></div><div style="flex:1"><label class="lb">Valor pago</label><input class="inp" id="mo-v" inputmode="decimal" placeholder="0 se voluntário"></div><div style="flex:1"><label class="lb">Quem pagou</label><select class="sel" id="mo-q"><option>Tatiana</option><option>Ronaldo</option></select></div></div>
   <div class="acts"><button class="btn-secondary" onclick="renderSaidas()">Cancelar</button><button class="btn-primary" onclick="salvarMaoDeObra()"><i class="fa-solid fa-check"></i> Salvar</button></div></div>`;
 };
 window.updMoMed=function(){const cl=document.getElementById('mo-cl').value;const sel=document.getElementById('mo-m');sel.disabled=!cl;
@@ -1003,8 +1056,8 @@ window.salvarMaoDeObra=async function(){
   if(medId==='__proxima__'&&clNome){const now=new Date();const ms=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
     const mr=ms[now.getMonth()]+' '+now.getFullYear();let em=DB.medicoes.find(m=>normCl(m.consorcio)===clNome&&m.mesRef===mr);
     if(!em){em={id:uid(),consorcio:clNome.replace(/^Consórcio\s*/i,''),mesRef:mr,imposto:0};DB.medicoes.push(em);}medId=em.id;}
-  const d={id:uid(),data:document.getElementById('mo-d').value,clienteNome:clNome,medicaoId:medId,mesRef:med?med.mesRef:'',nome:document.getElementById('mo-nome').value,funcao:document.getElementById('mo-func').value,valor:parseBRL(document.getElementById('mo-v').value)};
-  if(!d.nome||!d.clienteNome||d.valor<=0)return alert('Preencha nome, cliente e valor');
+  const d={id:uid(),data:document.getElementById('mo-d').value,clienteNome:clNome,medicaoId:medId,mesRef:med?med.mesRef:'',nome:document.getElementById('mo-nome').value,funcao:document.getElementById('mo-func').value,valor:parseBRL(document.getElementById('mo-v').value),quemPagou:document.getElementById('mo-q').value};
+  if(!d.nome||!d.clienteNome)return alert('Preencha nome e cliente');
   DB.maoDeObra.push(d);await saveDB('Mão de obra criada',d.nome+' - '+d.funcao);renderSaidas();
 };
 window.delMaoDeObra=async function(id){if(confirm('Excluir?')){DB.maoDeObra=DB.maoDeObra.filter(x=>x.id!==id);await saveDB('Mão de obra excluída','');renderSaidas();}};
@@ -1020,6 +1073,59 @@ window.delSelectedSaidas=async function(){
   if(dgIds.length)DB.despesasGerais=DB.despesasGerais.filter(x=>!dgIds.includes(x.id));
   if(moIds.length)DB.maoDeObra=DB.maoDeObra.filter(x=>!moIds.includes(x.id));
   await saveDB('Itens excluídos (lote)',ids.length+' itens');renderSaidas();
+};
+
+
+window.importMaoDeObra=function(){
+  const clientes=CLIENTES;
+  document.getElementById('tab-saidas').innerHTML=`<div class="fc"><h3 style="margin:0 0 12px;font-size:16px;font-weight:700"><i class="fa-solid fa-file-excel" style="color:#8b5cf6"></i> Importar mão de obra</h3>
+  <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:12px">Planilha com colunas: Nome, Função, Valor, Data (opcional)</p>
+  <div class="row"><div style="flex:1"><label class="lb">Cliente</label><select class="sel" id="imo-cl"><option value="">Selecione</option>${clientes.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select></div>
+  <div style="flex:1"><label class="lb">Medição / Mês</label><input class="inp" id="imo-mes" placeholder="Agosto 2025"></div>
+  <div style="flex:1"><label class="lb">Quem pagou</label><select class="sel" id="imo-q"><option>Tatiana</option><option>Ronaldo</option></select></div></div>
+  <label class="lb">Arquivo XLSX</label>
+  <div style="border:2px dashed var(--border);border-radius:8px;padding:20px;text-align:center;cursor:pointer;background:#f8fafc" onclick="document.getElementById('imo-file').click()">
+    <i class="fa-solid fa-cloud-arrow-up" style="font-size:1.5rem;color:#8b5cf6"></i>
+    <p style="font-size:.85rem;margin-top:4px">Clique para selecionar</p></div>
+  <input type="file" id="imo-file" accept=".xlsx,.xls" style="display:none" onchange="previewImportMO(this)">
+  <div id="imo-preview"></div>
+  <div class="acts"><button class="btn-secondary" onclick="renderSaidas()">Cancelar</button><button class="btn-primary" id="imo-btn" onclick="confirmarImportMO()" disabled><i class="fa-solid fa-check"></i> Importar</button></div></div>`;
+};
+window._imoData=null;
+window.previewImportMO=async function(input){
+  const file=input.files[0];if(!file)return;
+  if(!window.XLSX){const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';document.head.appendChild(s);await new Promise(r=>{s.onload=r;setTimeout(r,5000);});}
+  try{
+    const ab=await file.arrayBuffer();const wb=XLSX.read(ab,{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+    let items=[];let headerFound=false;
+    for(const row of rows){
+      if(!headerFound){if(String(row[0]).match(/nome/i)||String(row[1]).match(/fun[çc]/i)){headerFound=true;continue;}continue;}
+      const nome=String(row[0]||'').trim();if(!nome)continue;
+      const funcao=String(row[1]||'').trim();
+      const valor=parseFloat(String(row[2]||'0').replace(/[^\d.,]/g,'').replace(',','.'))||0;
+      const data=row[3]?String(row[3]):'';
+      items.push({nome,funcao,valor,data});
+    }
+    if(!items.length&&rows.length>1){rows.slice(1).forEach(row=>{const nome=String(row[0]||'').trim();if(!nome)return;items.push({nome,funcao:String(row[1]||''),valor:parseFloat(String(row[2]||'0').replace(/[^\d.,]/g,'').replace(',','.'))||0,data:String(row[3]||'')});});}
+    window._imoData=items;
+    let prev=`<div style="margin-top:12px"><strong>${items.length} pessoas</strong><table style="width:100%;border-collapse:collapse;font-size:.85rem;margin-top:8px">
+    <tr style="background:#f1f5f9"><th style="padding:6px 8px;text-align:left">Nome</th><th style="padding:6px 8px;text-align:left">Função</th><th style="padding:6px 8px;text-align:right">Valor</th></tr>`;
+    items.forEach((it,i)=>{prev+=`<tr style="background:${i%2?'#f8fafc':'#fff'}"><td style="padding:4px 8px">${esc(it.nome)}</td><td style="padding:4px 8px">${esc(it.funcao)}</td><td style="padding:4px 8px;text-align:right">${it.valor?fmt(it.valor):'Voluntário'}</td></tr>`;});
+    prev+=`</table></div>`;
+    document.getElementById('imo-preview').innerHTML=prev;
+    document.getElementById('imo-btn').disabled=false;
+  }catch(e){document.getElementById('imo-preview').innerHTML=`<div style="color:var(--danger);margin-top:8px">${e.message}</div>`;}
+};
+window.confirmarImportMO=async function(){
+  if(!window._imoData||!window._imoData.length)return;
+  const cl=document.getElementById('imo-cl').value;const mes=document.getElementById('imo-mes').value;const quem=document.getElementById('imo-q').value;
+  if(!cl||!mes)return alert('Preencha cliente e mês');
+  const med=DB.medicoes.find(m=>normCl(m.consorcio)===cl&&m.mesRef===mes);
+  const medId=med?med.id:'';
+  window._imoData.forEach(it=>{DB.maoDeObra.push({id:uid(),data:it.data||'',clienteNome:cl,medicaoId:medId,mesRef:mes,nome:it.nome,funcao:it.funcao,valor:it.valor,quemPagou:quem});});
+  await saveDB('Mão de obra importada',mes+' '+cl+' '+window._imoData.length+' pessoas');
+  window._imoData=null;renderSaidas();
 };
 
 // ═══════ FIXOS ═══════
@@ -1690,6 +1796,17 @@ function renderConfig(){
   DB.veiculos.forEach(v=>{h+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)"><div><strong>${esc(v.nome)}</strong> <span style="background:#dbeafe;color:var(--primary);padding:2px 8px;border-radius:4px;font-size:.75rem;font-weight:600">${v.kml} km/l</span></div><i class="fa-solid fa-trash btn-icon-danger" onclick="delVc('${v.id}')"></i></div>`;});
   if(!DB.veiculos.length)h+=`<p style="color:var(--text-muted);font-size:.875rem;padding:12px 0">Nenhum veículo.</p>`;
   h+=`</div>`;
+  // Colaboradores
+  h+=`<div class="list-box"><div class="list-box-header"><h3 style="font-weight:700"><i class="fa-solid fa-users" style="color:#8b5cf6"></i> Colaboradores</h3><button class="btn-primary" style="padding:8px 14px;font-size:.8rem" onclick="novoColab()"><i class="fa-solid fa-plus"></i> Novo</button></div>
+  <p style="font-size:.8rem;color:var(--text-muted);margin-bottom:8px">Valor/dia e condução. Custos calculados automaticamente nas saídas de campo.</p>`;
+  if(DB.colaboradores.length){
+    h+=`<table style="width:100%;border-collapse:collapse;font-size:.85rem">
+    <tr style="background:#f1f5f9"><th style="padding:8px;text-align:left">Nome</th><th style="padding:8px;text-align:left">Função</th><th style="padding:8px;text-align:right">Valor/dia</th><th style="padding:8px;text-align:right">Condução/dia</th><th style="padding:8px;text-align:center">Quem paga</th><th style="padding:8px"></th></tr>`;
+    DB.colaboradores.forEach((cb,i)=>{h+=`<tr style="background:${i%2?'#f8fafc':'#fff'}"><td style="padding:6px 8px;font-weight:600">${esc(cb.nome)}</td><td style="padding:6px 8px">${esc(cb.funcao)}</td><td style="padding:6px 8px;text-align:right">${cb.valorDia?fmt(cb.valorDia):'Voluntário'}</td><td style="padding:6px 8px;text-align:right">${cb.conducao?fmt(cb.conducao):'—'}</td><td style="padding:6px 8px;text-align:center;color:#7c3aed">${esc(cb.quemPaga||'Tatiana')}</td><td style="padding:6px 8px;text-align:center"><button class="btn-icon edit" onclick="editColab('${cb.id}')"><i class="fa-solid fa-pen"></i></button><i class="fa-solid fa-trash btn-icon-danger" onclick="delColab('${cb.id}')"></i></td></tr>`;});
+    h+=`</table>`;
+  }else{h+=`<p style="color:var(--text-muted);font-size:.875rem;padding:12px 0">Nenhum colaborador cadastrado.</p>`;}
+  h+=`</div>`;
+
   h+=`<div class="list-box"><div class="list-box-header"><h3 style="font-weight:700"><i class="fa-solid fa-dollar-sign" style="color:var(--success)"></i> Valores por relatório</h3><button class="btn-primary" style="padding:8px 14px;font-size:.8rem" onclick="cfgEditValores()"><i class="fa-solid fa-pen"></i> Editar</button></div>
   <p style="font-size:.8rem;color:var(--text-muted);margin-bottom:12px">Preço unitário de cada tipo de relatório por cliente.</p>`;
   const cfgClientes=vcClientes.length?vcClientes:CLIENTES.map(c=>({id:c,nome:c}));
@@ -1754,6 +1871,25 @@ function renderLogs(){
   h+=`</div>`;
   el.innerHTML=h;
 }
+
+window.novoColab=function(){editColabForm(null);};
+window.editColab=function(id){const cb=DB.colaboradores.find(x=>x.id===id);if(cb)editColabForm(cb);};
+function editColabForm(cb){
+  const isEdit=!!cb;
+  document.getElementById('modal-container').innerHTML=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:480px">
+  <h3 style="font-size:1rem;font-weight:700;margin-bottom:12px">${isEdit?'Editar':'Novo'} colaborador</h3>
+  <div class="row"><div style="flex:1"><label class="lb">Nome</label><input class="inp" id="cb-nome" value="${isEdit?esc(cb.nome):''}"></div><div style="flex:1"><label class="lb">Função</label><input class="inp" id="cb-func" value="${isEdit?esc(cb.funcao):''}" placeholder="Auxiliar de campo"></div></div>
+  <div class="row"><div style="flex:1"><label class="lb">Valor/dia (R$)</label><input class="inp" id="cb-vd" inputmode="decimal" value="${isEdit&&cb.valorDia?cb.valorDia.toFixed(2).replace('.',','):''}" placeholder="0 = voluntário"></div><div style="flex:1"><label class="lb">Condução/dia (R$)</label><input class="inp" id="cb-cd" inputmode="decimal" value="${isEdit&&cb.conducao?cb.conducao.toFixed(2).replace('.',','):''}" placeholder="0 = sem"></div><div style="flex:1"><label class="lb">Quem paga</label><select class="sel" id="cb-qp"><option${isEdit&&cb.quemPaga==='Tatiana'?' selected':''}>Tatiana</option><option${isEdit&&cb.quemPaga==='Ronaldo'?' selected':''}>Ronaldo</option></select></div></div>
+  <div class="acts">${isEdit?`<button class="btn-danger" onclick="delColab('${cb.id}')" style="margin-right:auto"><i class="fa-solid fa-trash"></i></button>`:''}<button class="btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="salvarColab('${isEdit?cb.id:''}')">${isEdit?'Atualizar':'Salvar'}</button></div></div></div>`;
+}
+window.salvarColab=async function(editId){
+  const d={nome:document.getElementById('cb-nome').value,funcao:document.getElementById('cb-func').value,valorDia:parseBRL(document.getElementById('cb-vd').value),conducao:parseBRL(document.getElementById('cb-cd').value),quemPaga:document.getElementById('cb-qp').value};
+  if(!d.nome)return alert('Preencha o nome');
+  if(editId){DB.colaboradores=DB.colaboradores.map(x=>x.id===editId?{...x,...d}:x);}
+  else{DB.colaboradores.push({id:uid(),...d});}
+  await saveDB('Colaborador '+(editId?'editado':'criado'),d.nome);closeModal();renderConfig();
+};
+window.delColab=async function(id){if(confirm('Excluir?')){DB.colaboradores=DB.colaboradores.filter(x=>x.id!==id);await saveDB('Colaborador excluído','');closeModal();renderConfig();}};
 
 window.resetAll=async function(){if(confirm('Resetar TUDO?')){DB={medicoes:[],saidas:[],obrigacoes:[],provisoes:[],veiculos:[],faturamento:[],precoLitro:0};await saveDB();await importInitial();}};
 </script>
