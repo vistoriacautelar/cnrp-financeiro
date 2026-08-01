@@ -597,32 +597,33 @@ function renderFatCard(f){
     }
 
     // Custos por pagador
-    const custTat=ss.filter(s=>(s.quemPagou||'Tatiana')==='Tatiana').reduce((s,sd)=>s+getTot(sd),0)
-      +dgs.filter(d=>(d.quemPagou||'Tatiana')==='Tatiana').reduce((s,d)=>s+d.valor,0)
-      +mos.filter(d=>(d.quemPagou||'Tatiana')==='Tatiana').reduce((s,d)=>s+d.valor,0);
-    const custRon=ss.filter(s=>s.quemPagou==='Ronaldo').reduce((s,sd)=>s+getTot(sd),0)
-      +dgs.filter(d=>d.quemPagou==='Ronaldo').reduce((s,d)=>s+d.valor,0)
-      +mos.filter(d=>d.quemPagou==='Ronaldo').reduce((s,d)=>s+d.valor,0);
-    const totAllCustos=totCustos+totProv;
+    // Costs by payer
+    const allCosts=[...ss.map(sd=>({v:getTot(sd),q:sd.quemPagou||'Tatiana'})),...dgs.map(d=>({v:d.valor,q:d.quemPagou||'Tatiana'})),...mos.map(d=>({v:d.valor,q:d.quemPagou||'Tatiana'}))];
+    const custTat=allCosts.filter(c=>c.q==='Tatiana').reduce((s,c)=>s+c.v,0);
+    const custRon=allCosts.filter(c=>c.q==='Ronaldo').reduce((s,c)=>s+c.v,0);
+    const custMed=allCosts.filter(c=>c.q==='Medição').reduce((s,c)=>s+c.v,0);
+    const custNing=allCosts.filter(c=>c.q==='Ninguém').reduce((s,c)=>s+c.v,0);
     const imposto=f.imposto||0;
     const ajuda=DB.ajudaCustoVeiculo||0;
+    const totDeducoes=custTat+custRon+custMed+totProv+imposto+ajuda;
 
-    // Resumo total
     h+=`<div style="background:#f1f5f9;border-radius:8px;padding:12px;font-size:.85rem;margin-top:8px;line-height:1.8">
     <div style="font-weight:700;margin-bottom:4px">Resumo de custos</div>
-    <div style="display:flex;justify-content:space-between"><span>Despesas Tatiana</span><span>${fmt(custTat)}</span></div>
-    <div style="display:flex;justify-content:space-between"><span>Despesas Ronaldo</span><span>${fmt(custRon)}</span></div>
+    ${custTat?`<div style="display:flex;justify-content:space-between"><span>Pago por Tatiana (reembolsar)</span><span>${fmt(custTat)}</span></div>`:''}
+    ${custRon?`<div style="display:flex;justify-content:space-between"><span>Pago por Ronaldo (reembolsar)</span><span>${fmt(custRon)}</span></div>`:''}
+    ${custMed?`<div style="display:flex;justify-content:space-between"><span>Descontado da medição</span><span>${fmt(custMed)}</span></div>`:''}
+    ${custNing?`<div style="display:flex;justify-content:space-between;color:var(--text-muted)"><span>Voluntário (sem custo)</span><span>${fmt(custNing)}</span></div>`:''}
     ${totProv?`<div style="display:flex;justify-content:space-between"><span>Previsões (func./reembolso)</span><span>${fmt(totProv)}</span></div>`:''}
     <div style="display:flex;justify-content:space-between"><span>Imposto</span><span>${fmt(imposto)}</span></div>
     <div style="display:flex;justify-content:space-between"><span>Ajuda custo veículo</span><span>${fmt(ajuda)}</span></div>
-    <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:4px;margin-top:4px;font-weight:700"><span>Total custos</span><span style="color:var(--danger)">${fmt(totAllCustos+imposto+ajuda)}</span></div>
+    <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:4px;margin-top:4px;font-weight:700"><span>Total deduções</span><span style="color:var(--danger)">${fmt(totDeducoes)}</span></div>
     <div style="display:flex;justify-content:space-between;margin-top:8px"><span>Medição</span><span style="font-weight:600">${fmt(f.valorTotal)}</span></div>
     <div style="display:flex;justify-content:space-between"><span>Pagamento (−imposto)</span><span>${fmt(f.valorTotal-imposto)}</span></div>
-    <div style="display:flex;justify-content:space-between;font-weight:700;color:var(--success)"><span>Líquido</span><span>${fmt(f.valorTotal-imposto-custTat-custRon-totProv-ajuda)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-weight:700;color:var(--success)"><span>Líquido</span><span>${fmt(f.valorTotal-totDeducoes)}</span></div>
     </div>`;
 
-    // Divisão
-    const liq=f.valorTotal-imposto-custTat-custRon-totProv-ajuda;
+    // Divisão 50/50 do líquido + reembolsos
+    const liq=f.valorTotal-totDeducoes;
     const metade=liq/2;
     const tatRecebe=metade+custTat+ajuda+totProv;
     const ronRecebe=metade+custRon-ajuda;
@@ -1017,7 +1018,7 @@ window.novaDespGeral=function(){
   document.getElementById('tab-saidas').innerHTML=`<div class="fc"><h3 style="margin:0 0 12px;font-size:16px;font-weight:700"><i class="fa-solid fa-receipt"></i> Nova despesa geral</h3>
   <div class="row"><div style="flex:1"><label class="lb">Cliente</label><select class="sel" id="dg-cl" onchange="updDgMed()"><option value="">Selecione</option>${clientes.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select></div>
   <div style="flex:1"><label class="lb">Medição</label><select class="sel" id="dg-m" disabled><option value="">—</option></select></div></div>
-  <div class="row"><div style="flex:1"><label class="lb">Data</label><input class="inp" type="date" id="dg-d"></div><div style="flex:1"><label class="lb">Valor</label><input class="inp" id="dg-v" inputmode="decimal"></div><div style="flex:1"><label class="lb">Quem pagou</label><select class="sel" id="dg-q"><option>Tatiana</option><option>Ronaldo</option></select></div></div>
+  <div class="row"><div style="flex:1"><label class="lb">Data</label><input class="inp" type="date" id="dg-d"></div><div style="flex:1"><label class="lb">Valor</label><input class="inp" id="dg-v" inputmode="decimal"></div><div style="flex:1"><label class="lb">Quem pagou</label><select class="sel" id="dg-q"><option>Tatiana</option><option>Ronaldo</option><option>Medição</option></select></div></div>
   <label class="lb">Descrição</label><input class="inp" id="dg-desc" placeholder="Descrição da despesa">
   <div class="acts"><button class="btn-secondary" onclick="renderSaidas()">Cancelar</button><button class="btn-primary" onclick="salvarDespGeral()"><i class="fa-solid fa-check"></i> Salvar</button></div></div>`;
 };
@@ -1044,7 +1045,7 @@ window.novaMaoDeObra=function(){
   <div class="row"><div style="flex:1"><label class="lb">Cliente</label><select class="sel" id="mo-cl" onchange="updMoMed()"><option value="">Selecione</option>${clientes.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select></div>
   <div style="flex:1"><label class="lb">Medição</label><select class="sel" id="mo-m" disabled><option value="">—</option></select></div></div>
   <div class="row"><div style="flex:1"><label class="lb">Nome da pessoa</label><input class="inp" id="mo-nome" placeholder="Nome completo"></div><div style="flex:1"><label class="lb">Função</label><input class="inp" id="mo-func" placeholder="Ajudante, pedreiro..."></div></div>
-  <div class="row"><div style="flex:1"><label class="lb">Data</label><input class="inp" type="date" id="mo-d"></div><div style="flex:1"><label class="lb">Valor pago</label><input class="inp" id="mo-v" inputmode="decimal" placeholder="0 se voluntário"></div><div style="flex:1"><label class="lb">Quem pagou</label><select class="sel" id="mo-q"><option>Tatiana</option><option>Ronaldo</option></select></div></div>
+  <div class="row"><div style="flex:1"><label class="lb">Data</label><input class="inp" type="date" id="mo-d"></div><div style="flex:1"><label class="lb">Valor pago</label><input class="inp" id="mo-v" inputmode="decimal" placeholder="0 se voluntário"></div><div style="flex:1"><label class="lb">Quem pagou</label><select class="sel" id="mo-q"><option>Tatiana</option><option>Ronaldo</option><option>Medição</option><option>Ninguém</option></select></div></div>
   <div class="acts"><button class="btn-secondary" onclick="renderSaidas()">Cancelar</button><button class="btn-primary" onclick="salvarMaoDeObra()"><i class="fa-solid fa-check"></i> Salvar</button></div></div>`;
 };
 window.updMoMed=function(){const cl=document.getElementById('mo-cl').value;const sel=document.getElementById('mo-m');sel.disabled=!cl;
@@ -1084,7 +1085,7 @@ window.importMaoDeObra=function(){
   <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:12px">Planilha com colunas: Nome, Função, Valor, Data (opcional)</p>
   <div class="row"><div style="flex:1"><label class="lb">Cliente</label><select class="sel" id="imo-cl"><option value="">Selecione</option>${clientes.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select></div>
   <div style="flex:1"><label class="lb">Medição / Mês</label><input class="inp" id="imo-mes" placeholder="Agosto 2025"></div>
-  <div style="flex:1"><label class="lb">Quem pagou</label><select class="sel" id="imo-q"><option>Tatiana</option><option>Ronaldo</option></select></div></div>
+  <div style="flex:1"><label class="lb">Quem pagou</label><select class="sel" id="imo-q"><option>Tatiana</option><option>Ronaldo</option><option>Medição</option><option>Ninguém</option></select></div></div>
   <label class="lb">Arquivo XLSX</label>
   <div style="border:2px dashed var(--border);border-radius:8px;padding:20px;text-align:center;cursor:pointer;background:#f8fafc" onclick="document.getElementById('imo-file').click()">
     <i class="fa-solid fa-cloud-arrow-up" style="font-size:1.5rem;color:#8b5cf6"></i>
@@ -1881,7 +1882,7 @@ function editColabForm(cb){
   document.getElementById('modal-container').innerHTML=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:480px">
   <h3 style="font-size:1rem;font-weight:700;margin-bottom:12px">${isEdit?'Editar':'Novo'} colaborador</h3>
   <div class="row"><div style="flex:1"><label class="lb">Nome</label><input class="inp" id="cb-nome" value="${isEdit?esc(cb.nome):''}"></div><div style="flex:1"><label class="lb">Função</label><input class="inp" id="cb-func" value="${isEdit?esc(cb.funcao):''}" placeholder="Auxiliar de campo"></div></div>
-  <div class="row"><div style="flex:1"><label class="lb">Valor/dia (R$)</label><input class="inp" id="cb-vd" inputmode="decimal" value="${isEdit&&cb.valorDia?cb.valorDia.toFixed(2).replace('.',','):''}" placeholder="0 = voluntário"></div><div style="flex:1"><label class="lb">Condução/dia (R$)</label><input class="inp" id="cb-cd" inputmode="decimal" value="${isEdit&&cb.conducao?cb.conducao.toFixed(2).replace('.',','):''}" placeholder="0 = sem"></div><div style="flex:1"><label class="lb">Quem paga</label><select class="sel" id="cb-qp"><option${isEdit&&cb.quemPaga==='Tatiana'?' selected':''}>Tatiana</option><option${isEdit&&cb.quemPaga==='Ronaldo'?' selected':''}>Ronaldo</option></select></div></div>
+  <div class="row"><div style="flex:1"><label class="lb">Valor/dia (R$)</label><input class="inp" id="cb-vd" inputmode="decimal" value="${isEdit&&cb.valorDia?cb.valorDia.toFixed(2).replace('.',','):''}" placeholder="0 = voluntário"></div><div style="flex:1"><label class="lb">Condução/dia (R$)</label><input class="inp" id="cb-cd" inputmode="decimal" value="${isEdit&&cb.conducao?cb.conducao.toFixed(2).replace('.',','):''}" placeholder="0 = sem"></div><div style="flex:1"><label class="lb">Quem paga</label><select class="sel" id="cb-qp"><option${isEdit&&cb.quemPaga==='Tatiana'?' selected':''}>Tatiana</option><option${isEdit&&cb.quemPaga==='Ronaldo'?' selected':''}>Ronaldo</option><option${isEdit&&cb.quemPaga==='Medição'?' selected':''}>Medição</option><option${isEdit&&cb.quemPaga==='Ninguém'?' selected':''}>Ninguém</option></select></div></div>
   <div class="acts">${isEdit?`<button class="btn-danger" onclick="delColab('${cb.id}')" style="margin-right:auto"><i class="fa-solid fa-trash"></i></button>`:''}<button class="btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="salvarColab('${isEdit?cb.id:''}')">${isEdit?'Atualizar':'Salvar'}</button></div></div></div>`;
 }
 window.salvarColab=async function(editId){
@@ -1907,7 +1908,7 @@ window.editSaidaColabs=function(saidaId){
     return `<label style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:${checked?'#eff6ff':'#f8fafc'};border:1px solid ${checked?'var(--primary)':'var(--border)'};border-radius:8px;cursor:pointer">
     <input type="checkbox" class="ec-chk" value="${cb.id}"${checked?' checked':''}>
     <div style="flex:1"><strong>${esc(cb.nome)}</strong> <span style="color:var(--text-muted);font-size:.8rem">· ${esc(cb.funcao)}</span></div>
-    <div style="text-align:right;font-size:.85rem"><div style="font-weight:600">${totalDia?fmt(totalDia)+'/dia':'Voluntário'}</div><div style="font-size:.7rem;color:var(--text-muted)">Pago por ${esc(cb.quemPaga||'Tatiana')}</div></div></label>`;
+    <div style="text-align:right;font-size:.85rem"><div style="font-weight:600">${totalDia?fmt(totalDia)+'/dia':'Voluntário'}</div><div style="font-size:.7rem;color:var(--text-muted)">${cb.quemPaga==='Ninguém'?'Voluntário':cb.quemPaga==='Medição'?'Desc. medição':'Pago por '+esc(cb.quemPaga||'Tatiana')}</div></div></label>`;
   }).join('')}</div>`:`<p style="color:var(--text-muted)">Nenhum colaborador cadastrado. Cadastre em Config.</p>`}
   <div class="acts" style="margin-top:16px"><button class="btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="salvarSaidaColabs('${saidaId}')"><i class="fa-solid fa-check"></i> Salvar</button></div></div></div>`;
 };
