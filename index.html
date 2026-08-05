@@ -311,7 +311,7 @@ const firestore=getFirestore(app);
 const storage=getStorage(app);
 
 // ═══════ DATA ═══════
-let DB={medicoes:[],saidas:[],obrigacoes:[],provisoes:[],veiculos:[],faturamento:[],precoLitro:0,ajudaCustoVeiculo:1000,producao:[],valoresRelatorio:[],logs:[],despesasGerais:[],maoDeObra:[],colaboradores:[]};
+let DB={medicoes:[],saidas:[],obrigacoes:[],provisoes:[],veiculos:[],faturamento:[],precoLitro:0,ajudaCustoVeiculo:1000,producao:[],valoresRelatorio:[],logs:[],despesasGerais:[],maoDeObra:[],colaboradores:[],ajudaCustoLog:[]};
 const DOC_REF=doc(firestore,'financeiro','data');
 let unsubSnap=null;
 
@@ -353,7 +353,7 @@ function startSync(){
       const d=snap.data();
       DB.medicoes=d.medicoes||[];DB.saidas=d.saidas||[];DB.obrigacoes=d.obrigacoes||[];
       DB.provisoes=d.provisoes||[];DB.veiculos=d.veiculos||[];DB.faturamento=d.faturamento||[];
-      DB.precoLitro=d.precoLitro||0;DB.ajudaCustoVeiculo=d.ajudaCustoVeiculo??1000;DB.producao=d.producao||[];DB.valoresRelatorio=d.valoresRelatorio||[];DB.logs=d.logs||[];DB.despesasGerais=d.despesasGerais||[];DB.maoDeObra=d.maoDeObra||[];DB.colaboradores=d.colaboradores||[];
+      DB.precoLitro=d.precoLitro||0;DB.ajudaCustoVeiculo=d.ajudaCustoVeiculo??1000;DB.producao=d.producao||[];DB.valoresRelatorio=d.valoresRelatorio||[];DB.logs=d.logs||[];DB.despesasGerais=d.despesasGerais||[];DB.maoDeObra=d.maoDeObra||[];DB.colaboradores=d.colaboradores||[];DB.ajudaCustoLog=d.ajudaCustoLog||[];
       document.getElementById('sync-status').innerHTML='<i class="fa-solid fa-cloud-arrow-up"></i> Sincronizado';document.getElementById('sync-status').style.color='#34d399';
       // Skip render if this is our own write (within 3 seconds)
       if(Date.now()-_lastSaveTs<3000){/* own write, skip render */}else{render();}
@@ -467,6 +467,23 @@ const pad=n=>String(n).padStart(2,'0');
 const CLIENTES=['Consórcio 3AB','Consórcio 2C','Consórcio 10C','Carioca Itaquera','BRT','Mananciais'];
 const normCl=c=>{const m={'3AB':'Consórcio 3AB','2C':'Consórcio 2C','10C':'Consórcio 10C','Carioca Castilho':'Carioca Itaquera','Carioca Castilho ':'Carioca Itaquera'};return m[c]||m[(c||'').trim()]||c;};
 const matchCl=(consorcio,cl)=>{const a=normCl(consorcio),b=normCl(cl);if(a===b)return true;const strip=s=>(s||'').replace(/consórcio\s*/gi,'').replace(/carioca\s*/gi,'').trim().toLowerCase();return strip(a)===strip(b)||strip(consorcio)===strip(cl);};
+function findMedForFat(cl,mesRef){
+  if(!mesRef)return null;
+  // Exact match first
+  let m=DB.medicoes.find(x=>matchCl(x.consorcio,cl)&&x.mesRef===mesRef);
+  if(m)return m;
+  // Try with includes but only if both have same year or one has no year
+  const fatYear=(mesRef.match(/20\d{2}/)||[])[0];
+  m=DB.medicoes.find(x=>{
+    if(!matchCl(x.consorcio,cl))return false;
+    const medYear=(x.mesRef.match(/20\d{2}/)||[])[0];
+    if(fatYear&&medYear&&fatYear!==medYear)return false;
+    const fatMonth=mesRef.split(/\s+/)[0];
+    const medMonth=x.mesRef.split(/\s+/)[0];
+    return fatMonth===medMonth;
+  });
+  return m||null;
+}
 const mesOrder=r=>{const ms={Janeiro:1,Fevereiro:2,Março:3,Abril:4,Maio:5,Junho:6,Julho:7,Agosto:8,Setembro:9,Outubro:10,Novembro:11,Dezembro:12};const p=(r||'').split(/[\s\/]+/);let y=0,m=0;p.forEach(x=>{if(ms[x])m=ms[x];const n=parseInt(x);if(n>2000)y=n;else if(n>=24&&n<=30)y=2000+n;});return y*100+m;};
 function getPeriodos(start,end){const ps=[];let d=new Date(start+'T12:00:00');const e=new Date(end+'T12:00:00');while(d<=e){const n=new Date(d);n.setMonth(n.getMonth()+1);ps.push({inicio:d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()),label:pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear()+' → '+pad(n.getDate())+'/'+pad(n.getMonth()+1)+'/'+n.getFullYear()});d=n;}return ps;}
 function getTot(sd){const v=DB.veiculos.find(x=>x.id===sd.veiculoId);return(v?calcComb(sd.km,v.kml,sd.valorLitro):(sd.combManual||0))+(sd.pedagio||0)+(sd.refeicao||0)+(sd.outros||0);}
@@ -528,7 +545,7 @@ function renderFatCard(f){
     const arqs=f.arquivos||[];
     const cl=normCl(f.clienteNorm||f.cliente);
     const clRaw=f.clienteNorm||f.cliente;
-    const med=DB.medicoes.find(m=>matchCl(m.consorcio,cl)&&f.mesRef&&f.mesRef.includes(m.mesRef));
+    const med=findMedForFat(cl,f.mesRef);
     const medId=med?med.id:null;
     // Costs
     const ss=medId?DB.saidas.filter(s=>s.medicaoId===medId).sort((a,b)=>(a.data||'').localeCompare(b.data||'')):[];
@@ -727,7 +744,7 @@ function fatForm(f){
   let saidasHtml='';
   if(isEdit){
     const cl=normCl(f.clienteNorm||f.cliente);const clRaw=f.clienteNorm||f.cliente;
-    const med=DB.medicoes.find(m=>matchCl(m.consorcio,cl)&&f.mesRef&&f.mesRef.includes(m.mesRef));
+    const med=findMedForFat(cl,f.mesRef);
     const medId=med?med.id:null;
     const ss=medId?DB.saidas.filter(s=>s.medicaoId===medId).sort((a,b)=>(a.data||'').localeCompare(b.data||'')):[];
     if(ss.length){
@@ -774,7 +791,7 @@ window.salvarFat=async function(editId){
 window.gerarResumo=function(fatId){
   const f=DB.faturamento.find(x=>x.id===fatId);if(!f)return;
   const cl=f.clienteNorm||f.cliente;const clN=normCl(cl);
-  const med=DB.medicoes.find(m=>matchCl(m.consorcio,cl)&&f.mesRef&&f.mesRef.includes(m.mesRef));
+  const med=findMedForFat(cl,f.mesRef);
   const medId=med?med.id:null;
   const ss=medId?DB.saidas.filter(s=>s.medicaoId===medId).sort((a,b)=>(a.data||'').localeCompare(b.data||'')):[];
   const dgs=DB.despesasGerais.filter(d=>d.medicaoId===medId||(matchCl(d.clienteNome,cl)&&d.mesRef===f.mesRef));
@@ -1593,7 +1610,7 @@ function renderRelatorio(){
   // Table
   if(filteredFat.length){h+=`<div id="rel-table" class="report-section"><h3 style="font-weight:700;margin-bottom:16px"><i class="fa-solid fa-table"></i> Detalhamento</h3>
     <table style="width:100%;border-collapse:collapse;font-size:.85rem"><tr style="background:#f1f5f9"><th style="padding:10px;text-align:left">Cliente</th><th style="padding:10px;text-align:left">Mês</th><th style="padding:10px;text-align:right">Valor</th><th style="padding:10px;text-align:right">Visitas</th><th style="padding:10px;text-align:center">Status</th></tr>`;
-    sortFat(filteredFat).forEach((f,i)=>{const cl=normCl(f.clienteNorm||f.cliente);const med=DB.medicoes.find(m=>m.consorcio===(f.clienteNorm||f.cliente)&&f.mesRef&&f.mesRef.includes(m.mesRef));const ns=med?DB.saidas.filter(s=>s.medicaoId===med.id).length:0;
+    sortFat(filteredFat).forEach((f,i)=>{const cl=normCl(f.clienteNorm||f.cliente);const med=findMedForFat(normCl(f.clienteNorm||f.cliente),f.mesRef);const ns=med?DB.saidas.filter(s=>s.medicaoId===med.id).length:0;
       h+=`<tr style="background:${i%2?'#f8fafc':'#fff'}"><td style="padding:8px 10px">${esc(cl)}</td><td style="padding:8px 10px">${esc(f.mesRef)}</td><td style="padding:8px 10px;text-align:right;font-weight:600">${fmt(f.valorTotal)}</td><td style="padding:8px 10px;text-align:right">${ns}</td><td style="padding:8px 10px;text-align:center"><span class="status-tag ${f.status==='Pago'?'pago':'pend'}">${f.status}</span></td></tr>`;});
     h+=`</table></div>`;}
   el.innerHTML=h;
@@ -1834,7 +1851,7 @@ function renderConfig(){
   document.getElementById('top-metrics').innerHTML='';
   let h=`<div class="config-grid">
   <div class="config-card orange-border"><div class="c-info"><h4><i class="fa-solid fa-gas-pump"></i> Preço do litro</h4><div class="val">${DB.precoLitro>0?fmt(DB.precoLitro):'—'}</div></div><button class="btn-edit-circle" onclick="editPreco()"><i class="fa-solid fa-pen"></i></button></div>
-  <div class="config-card"><div class="c-info"><h4><i class="fa-solid fa-car"></i> Ajuda custo veículo</h4><div class="val">${fmt(DB.ajudaCustoVeiculo)}</div><p>Ronaldo → Tatiana/mês</p></div><button class="btn-edit-circle" onclick="editAjuda()"><i class="fa-solid fa-pen"></i></button></div></div>
+  <div class="config-card"><div class="c-info"><h4><i class="fa-solid fa-car"></i> Ajuda custo veículo</h4><div class="val">${fmt(DB.ajudaCustoVeiculo)}</div><p>Ronaldo → Tatiana/mês</p></div><div><button class="btn-edit-circle" onclick="editAjuda()"><i class="fa-solid fa-pen"></i></button><button class="btn-edit-circle" onclick="verAjudaCusto()" style="margin-top:4px" title="Histórico"><i class="fa-solid fa-clock-rotate-left"></i></button></div></div></div>
   <div id="pf-pc"></div><div id="pf-aj"></div>`;
   h+=`<div class="list-box"><div class="list-box-header"><h3 style="font-weight:700">Veículos</h3><button class="btn-primary" style="padding:8px 14px;font-size:.8rem" onclick="novoVc()"><i class="fa-solid fa-plus"></i> Novo</button></div>`;
   DB.veiculos.forEach(v=>{h+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)"><div><strong>${esc(v.nome)}</strong> <span style="background:#dbeafe;color:var(--primary);padding:2px 8px;border-radius:4px;font-size:.75rem;font-weight:600">${v.kml} km/l</span></div><i class="fa-solid fa-trash btn-icon-danger" onclick="delVc('${v.id}')"></i></div>`;});
@@ -2013,6 +2030,26 @@ window.saveMOFromFat=async function(cl,medId,mesRef){
   if(!d.nome)return alert('Preencha o nome');DB.maoDeObra.push(d);await saveDB('Mão de obra (fat)',d.nome);closeModal();renderFat();
 };
 
+window.editSaidaInline=function(saidaId){
+  const sd=DB.saidas.find(x=>x.id===saidaId);if(!sd)return;
+  const v=DB.veiculos.find(x=>x.id===sd.veiculoId);
+  const comb=v?calcComb(sd.km,v.kml,sd.valorLitro):(sd.combManual||0);
+  document.getElementById('modal-container').innerHTML=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:550px">
+  <h3 style="font-size:1rem;font-weight:700;margin-bottom:12px"><i class="fa-solid fa-car"></i> Editar saída — ${fmtD(sd.data)}</h3>
+  <div class="row"><div style="flex:1"><label class="lb">Data</label><input class="inp" type="date" id="esd-d" value="${sd.data||''}"></div><div style="flex:1"><label class="lb">Quem pagou</label><select class="sel" id="esd-q"><option${(sd.quemPagou||'Tatiana')==='Tatiana'?' selected':''}>Tatiana</option><option${sd.quemPagou==='Ronaldo'?' selected':''}>Ronaldo</option></select></div></div>
+  <label class="lb">Local</label><input class="inp" id="esd-l" value="${esc(sd.local)}">
+  <div class="row"><div style="flex:1"><label class="lb">🚗 Veículo</label><select class="sel" id="esd-vc">${DB.veiculos.map(v2=>`<option value="${v2.id}"${v2.id===sd.veiculoId?' selected':''}>${esc(v2.nome)}</option>`).join('')}<option value=""${!sd.veiculoId?' selected':''}>Manual</option></select></div>
+  <div style="flex:1"><label class="lb">📏 KM</label><input class="inp" type="number" id="esd-km" value="${sd.km||0}"></div></div>
+  <div class="row"><div style="flex:1"><label class="lb">⛽ Combustível manual</label><input class="inp" id="esd-c" inputmode="decimal" value="${sd.combManual?sd.combManual.toFixed(2).replace('.',','):''}" placeholder="Se sem veículo/KM"></div>
+  <div style="flex:1"><label class="lb">🛣️ Pedágio</label><input class="inp" id="esd-p" inputmode="decimal" value="${sd.pedagio?sd.pedagio.toFixed(2).replace('.',','):''}"></div>
+  <div style="flex:1"><label class="lb">🍽️ Refeição</label><input class="inp" id="esd-r" inputmode="decimal" value="${sd.refeicao?sd.refeicao.toFixed(2).replace('.',','):''}"></div></div>
+  <div class="acts"><button class="btn-danger" onclick="DB.saidas=DB.saidas.filter(x=>x.id!=='${sd.id}');saveDB('Saída excluída','');closeModal();renderFat()" style="margin-right:auto"><i class="fa-solid fa-trash"></i></button><button class="btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="saveEditSaida('${sd.id}')"><i class="fa-solid fa-check"></i> Atualizar</button></div></div></div>`;
+};
+window.saveEditSaida=async function(id){
+  DB.saidas=DB.saidas.map(s=>s.id===id?{...s,data:document.getElementById('esd-d').value,local:document.getElementById('esd-l').value,quemPagou:document.getElementById('esd-q').value,veiculoId:document.getElementById('esd-vc').value,km:parseFloat(document.getElementById('esd-km').value)||0,combManual:parseBRL(document.getElementById('esd-c').value),pedagio:parseBRL(document.getElementById('esd-p').value),refeicao:parseBRL(document.getElementById('esd-r').value),valorLitro:DB.precoLitro}:s);
+  await saveDB('Saída editada','');closeModal();renderFat();
+};
+
 window.editSaidaColabs=function(saidaId){
   const sd=DB.saidas.find(x=>x.id===saidaId);if(!sd)return;
   const currentColabs=sd.colaboradores||[];
@@ -2077,9 +2114,29 @@ window.previewImportSaidas=async function(input){
   if(!window.XLSX){const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';document.head.appendChild(s);await new Promise(r=>{s.onload=r;setTimeout(r,5000);});}
   try{
     const sheetIdx=parseInt(document.getElementById('isd-sheet').value)||0;
-    const ab=await file.arrayBuffer();const wb=XLSX.read(ab,{type:'array',cellDates:true});
+    const ab=await file.arrayBuffer();const wb=XLSX.read(ab,{type:'array',cellDates:false});
     const ws=wb.Sheets[wb.SheetNames[sheetIdx]||wb.SheetNames[0]];
-    const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false});
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
+    
+    // Excel serial date to ISO string
+    function excelDateToISO(v){
+      if(!v)return '';
+      if(v instanceof Date){const d=v;return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+      if(typeof v==='number'&&v>40000&&v<60000){
+        // Excel serial number
+        const d=new Date((v-25569)*86400*1000);
+        return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+      }
+      const s=String(v).trim();
+      // Try DD/MM/YYYY or DD-MM-YYYY
+      const m1=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+      if(m1){const y=m1[3].length===2?'20'+m1[3]:m1[3];return `${y}-${m1[2].padStart(2,'0')}-${m1[1].padStart(2,'0')}`;}
+      // Try YYYY-MM-DD
+      const m2=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if(m2)return `${m2[1]}-${m2[2]}-${m2[3]}`;
+      return '';
+    }
+    function parseNum(v){return parseFloat(String(v||'0').replace(/[R$\s]/g,'').replace(',','.'))||0;}
     
     const clienteMap={'3AB':'Consórcio 3AB','2C':'Consórcio 2C','10C':'Consórcio 10C','Carioca':'Carioca Itaquera','Carioca Castilho':'Carioca Itaquera','Mananciais':'Mananciais','BRT':'BRT'};
     function mapCliente(obs){
@@ -2101,19 +2158,12 @@ window.previewImportSaidas=async function(input){
       if(headerRow<0)continue;
       let dataVal=r[0];
       if(!dataVal)continue;
-      // Parse date
-      let dateStr='';
-      if(dataVal instanceof Date){dateStr=dataVal.toISOString().slice(0,10);}
-      else{
-        const ds=String(dataVal).trim();
-        const dm=ds.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-        if(dm){const y=dm[3].length===2?'20'+dm[3]:dm[3];dateStr=`${y}-${dm[2].padStart(2,'0')}-${dm[1].padStart(2,'0')}`;}
-      }
-      if(!dateStr||dateStr==='NaN')continue;
+      let dateStr=excelDateToISO(dataVal);
+      if(!dateStr)continue;
 
-      const comb=parseFloat(String(r[1]||'0').replace(/[R$\s]/g,'').replace(',','.'))||0;
-      const pedagio=parseFloat(String(r[2]||'0').replace(/[R$\s]/g,'').replace(',','.'))||0;
-      const refeicao=parseFloat(String(r[3]||'0').replace(/[R$\s]/g,'').replace(',','.'))||0;
+      const comb=parseNum(r[1]);
+      const pedagio=parseNum(r[2]);
+      const refeicao=parseNum(r[3]);
       const colabs=String(r[4]||'').trim();
       const obsCliente=String(r[5]||'').trim();
       const coletor=String(r[6]||'').trim();
@@ -2184,7 +2234,7 @@ window.confirmarImportSaidas=async function(){
       id:uid(),data:it.date,local:it.local,veiculoId:'',km:0,valorLitro:0,
       combManual:it.comb,pedagio:it.pedagio,refeicao:it.refeicao,
       outros:0,outrosDesc:'',quemPagou,medicaoId:med.id,obs:'',
-      reembolsado:true,colaboradores:[]
+      reembolsado:true,colaboradores:[],ajudaCustoLog:[]
     });
     count++;
   });
@@ -2303,6 +2353,71 @@ window.fixMesRefYears=async function(){
   if(fixed)await saveDB('Anos adicionados',fixed+' medições');
   alert(fixed+' medição(ões) atualizada(s)');
   repairDates();
+};
+
+// ═══════ AJUDA CUSTO HISTÓRICO ═══════
+window.verAjudaCusto=function(){
+  if(!DB.ajudaCustoLog)DB.ajudaCustoLog=[];
+  
+  // Build monthly summary from faturamentos
+  const meses=new Set();
+  DB.faturamento.forEach(f=>{
+    if(!f.mesRef)return;
+    const parts=f.mesRef.match(/(Janeiro|Fevereiro|Março|Abril|Maio|Junho|Julho|Agosto|Setembro|Outubro|Novembro|Dezembro)\s+(20\d{2})/);
+    if(parts)meses.add(parts[0]);
+  });
+  const mesesArr=[...meses].sort((a,b)=>{
+    const ma=a.match(/(\w+)\s+(\d{4})/);const mb=b.match(/(\w+)\s+(\d{4})/);
+    const mN={'Janeiro':1,'Fevereiro':2,'Março':3,'Abril':4,'Maio':5,'Junho':6,'Julho':7,'Agosto':8,'Setembro':9,'Outubro':10,'Novembro':11,'Dezembro':12};
+    return (parseInt(mb[2])*100+(mN[mb[1]]||0))-(parseInt(ma[2])*100+(mN[ma[1]]||0));
+  });
+
+  const log=DB.ajudaCustoLog||[];
+
+  let h=`<div class="fc"><h3 style="font-size:1rem;font-weight:700;margin-bottom:12px"><i class="fa-solid fa-car"></i> Ajuda de custo veículo — ${fmt(DB.ajudaCustoVeiculo)}/mês</h3>
+  <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:16px">Ronaldo → Tatiana. Marque os meses em que a ajuda foi solicitada/recebida.</p>
+  <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+  <tr style="background:#f1f5f9"><th style="padding:8px;text-align:center;width:40px">✓</th><th style="padding:8px;text-align:left">Mês/Ano</th><th style="padding:8px;text-align:left">Medições pagas</th><th style="padding:8px;text-align:right">Valor</th><th style="padding:8px;text-align:center">Status</th></tr>`;
+
+  mesesArr.forEach((mes,i)=>{
+    const fats=DB.faturamento.filter(f=>f.mesRef===mes&&f.status==='Pago');
+    const clientes=fats.map(f=>normCl(f.clienteNorm||f.cliente)).join(', ');
+    const entry=log.find(l=>l.mes===mes);
+    const solicitado=entry?.solicitado||false;
+    const dataSol=entry?.data||'';
+    
+    h+=`<tr style="background:${solicitado?'#f0fdf4':i%2?'#f8fafc':'#fff'}">
+    <td style="padding:6px 8px;text-align:center"><input type="checkbox" class="ac-chk" data-mes="${esc(mes)}"${solicitado?' checked':''} onchange="toggleAjudaCusto('${esc(mes)}',this.checked)"></td>
+    <td style="padding:6px 8px;font-weight:600">${esc(mes)}</td>
+    <td style="padding:6px 8px;font-size:.8rem">${fats.length?esc(clientes):'<span style="color:var(--text-muted)">Nenhuma paga</span>'}</td>
+    <td style="padding:6px 8px;text-align:right;font-weight:600">${fmt(DB.ajudaCustoVeiculo)}</td>
+    <td style="padding:6px 8px;text-align:center">${solicitado?`<span style="background:var(--success-bg);color:var(--success-text);padding:2px 8px;border-radius:4px;font-size:.75rem;font-weight:600">Solicitado${dataSol?' '+dataSol:''}</span>`:'<span style="color:var(--warning);font-size:.8rem">Pendente</span>'}</td></tr>`;
+  });
+
+  // Current month check
+  const now=new Date();const mesesN=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const mesAtual=mesesN[now.getMonth()]+' '+now.getFullYear();
+  const jaTemAtual=log.find(l=>l.mes===mesAtual)?.solicitado;
+
+  h+=`</table>`;
+  if(!jaTemAtual){h+=`<div style="background:var(--warning-bg);border-radius:8px;padding:10px;margin-top:12px;color:var(--warning-text);font-size:.85rem"><i class="fa-solid fa-triangle-exclamation"></i> <strong>${mesAtual}</strong> — ajuda de custo ainda não solicitada.</div>`;}
+  else{h+=`<div style="background:var(--success-bg);border-radius:8px;padding:10px;margin-top:12px;color:var(--success-text);font-size:.85rem"><i class="fa-solid fa-check-circle"></i> <strong>${mesAtual}</strong> — já solicitado.</div>`;}
+
+  h+=`<div class="acts"><button class="btn-secondary" onclick="renderConfig()">Voltar</button></div></div>`;
+  document.getElementById('tab-config').innerHTML=h;
+};
+
+window.toggleAjudaCusto=async function(mes,checked){
+  if(!DB.ajudaCustoLog)DB.ajudaCustoLog=[];
+  const idx=DB.ajudaCustoLog.findIndex(l=>l.mes===mes);
+  if(checked){
+    const hoje=new Date().toLocaleDateString('pt-BR');
+    if(idx>=0){DB.ajudaCustoLog[idx].solicitado=true;DB.ajudaCustoLog[idx].data=hoje;}
+    else{DB.ajudaCustoLog.push({mes,solicitado:true,data:hoje});}
+  }else{
+    if(idx>=0){DB.ajudaCustoLog[idx].solicitado=false;DB.ajudaCustoLog[idx].data='';}
+  }
+  await saveDB('Ajuda custo '+(checked?'marcada':'desmarcada'),mes);
 };
 
 window.resetAll=async function(){if(confirm('Resetar TUDO?')){DB={medicoes:[],saidas:[],obrigacoes:[],provisoes:[],veiculos:[],faturamento:[],precoLitro:0};await saveDB();await importInitial();}};
