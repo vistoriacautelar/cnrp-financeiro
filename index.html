@@ -577,6 +577,7 @@ function renderFatCard(f){
     }
 
     // Costs summary line
+    if(f.ajudaCusto){h+=`<div style="font-size:.75rem;background:#dbeafe;color:var(--primary);padding:2px 8px;border-radius:4px;display:inline-block;margin-bottom:4px"><i class="fa-solid fa-car"></i> Ajuda custo ${fmt(DB.ajudaCustoVeiculo)}</div>`;}
     if(totCustos>0){h+=`<div style="font-size:.8rem;color:var(--text-muted);display:flex;gap:12px;flex-wrap:wrap">${totCampo?`<span><i class="fa-solid fa-car"></i> ${fmt(totCampo)}</span>`:''}${totDG?`<span><i class="fa-solid fa-receipt"></i> ${fmt(totDG)}</span>`:''}${totMO?`<span><i class="fa-solid fa-helmet-safety"></i> ${fmt(totMO)}</span>`:''}<span style="font-weight:600">Total: ${fmt(totCustos)}</span></div>`;}
 
     // ══ Expandable detail panel ══
@@ -632,7 +633,7 @@ function renderFatCard(f){
     const custMed=allCosts.filter(c=>c.q==='Medição').reduce((s,c)=>s+c.v,0);
     const custNing=allCosts.filter(c=>c.q==='Ninguém').reduce((s,c)=>s+c.v,0);
     const imposto=f.imposto||0;
-    const ajuda=DB.ajudaCustoVeiculo||0;
+    const ajuda=f.ajudaCusto?DB.ajudaCustoVeiculo:0;
     const totDeducoes=custTat+custRon+custMed+totProv+imposto+ajuda;
 
     h+=`<div style="background:#f1f5f9;border-radius:8px;padding:12px;font-size:.85rem;margin-top:8px;line-height:1.8">
@@ -679,6 +680,7 @@ function renderFatCard(f){
     h+=`<div class="card-actions" onclick="event.stopPropagation()">
       <button class="attach-btn" onclick="uploadNF('${f.id}')"><i class="fa-solid fa-paperclip"></i> Anexar documento</button>
       <div style="display:flex;gap:4px"><span id="upload-status-${f.id}" style="font-size:.7rem"></span>
+      <button class="btn-icon" title="${f.ajudaCusto?'Remover ajuda custo':'Aplicar ajuda custo'}" onclick="toggleAjudaFat('${f.id}')" style="color:${f.ajudaCusto?'var(--success)':'var(--text-muted)'}"><i class="fa-solid fa-car"></i></button>
       <button class="btn-icon check" title="${isPago?'Marcar pendente':'Marcar como pago'}" onclick="toggleFat('${f.id}')"><i class="fa-solid ${isPago?'fa-arrow-rotate-left':'fa-square-check'}"></i></button>
       <button class="btn-icon edit" title="Editar" onclick="editFat('${f.id}')"><i class="fa-solid fa-pen"></i></button>
       <button class="btn-icon" title="Acerto" onclick="gerarResumo('${f.id}')"><i class="fa-solid fa-file-lines"></i></button>
@@ -819,7 +821,7 @@ window.gerarResumo=function(fatId){
   const totMoOrphan=orphanMo.reduce((s,m)=>s+m.valor,0);
   const totDG=dgs.reduce((s,d)=>s+d.valor,0);
   const imposto=f.imposto||0;
-  const ajuda=DB.ajudaCustoVeiculo||0;
+  const ajuda=f.ajudaCusto?DB.ajudaCustoVeiculo:0;
 
   // By payer
   const despTat=dateRows.filter(r=>r.quemPagou==='Tatiana').reduce((s,r)=>s+r.campo,0)+dgs.filter(d=>(d.quemPagou||'Tatiana')==='Tatiana').reduce((s,d)=>s+d.valor,0);
@@ -2030,6 +2032,22 @@ window.saveMOFromFat=async function(cl,medId,mesRef){
   if(!d.nome)return alert('Preencha o nome');DB.maoDeObra.push(d);await saveDB('Mão de obra (fat)',d.nome);closeModal();renderFat();
 };
 
+window.toggleAjudaFat=async function(id){
+  const f=DB.faturamento.find(x=>x.id===id);if(!f)return;
+  if(!f.ajudaCusto){
+    // Check if another fat in same month already has it
+    const mesRef=f.mesRef;
+    const other=DB.faturamento.find(x=>x.id!==id&&x.mesRef===mesRef&&x.ajudaCusto);
+    if(other){
+      if(!confirm(`Ajuda de custo já aplicada em ${normCl(other.clienteNorm||other.cliente)} neste mês. Mover para ${normCl(f.clienteNorm||f.cliente)}?`))return;
+      other.ajudaCusto=false;
+    }
+    f.ajudaCusto=true;
+  }else{f.ajudaCusto=false;}
+  await saveDB('Ajuda custo '+(f.ajudaCusto?'aplicada':'removida'),f.mesRef+' '+normCl(f.clienteNorm||f.cliente));
+  renderFat();
+};
+
 window.editSaidaInline=function(saidaId){
   const sd=DB.saidas.find(x=>x.id===saidaId);if(!sd)return;
   const v=DB.veiculos.find(x=>x.id===sd.veiculoId);
@@ -2357,6 +2375,7 @@ window.fixMesRefYears=async function(){
 
 // ═══════ AJUDA CUSTO HISTÓRICO ═══════
 window.verAjudaCusto=function(){
+  // Show which fat has ajuda per month
   if(!DB.ajudaCustoLog)DB.ajudaCustoLog=[];
   
   // Build monthly summary from faturamentos
@@ -2386,18 +2405,22 @@ window.verAjudaCusto=function(){
     const solicitado=entry?.solicitado||false;
     const dataSol=entry?.data||'';
     
-    h+=`<tr style="background:${solicitado?'#f0fdf4':i%2?'#f8fafc':'#fff'}">
-    <td style="padding:6px 8px;text-align:center"><input type="checkbox" class="ac-chk" data-mes="${esc(mes)}"${solicitado?' checked':''} onchange="toggleAjudaCusto('${esc(mes)}',this.checked)"></td>
+    // Check which fat has ajuda applied this month
+    const ajFat=DB.faturamento.find(x=>x.mesRef===mes&&x.ajudaCusto);
+    const aplicado=!!ajFat;
+    const aplicadoEm=ajFat?normCl(ajFat.clienteNorm||ajFat.cliente):'';
+    h+=`<tr style="background:${aplicado?'#f0fdf4':i%2?'#f8fafc':'#fff'}">
+    <td style="padding:6px 8px;text-align:center">${aplicado?'<i class="fa-solid fa-check-circle" style="color:var(--success)"></i>':'<i class="fa-solid fa-circle" style="color:#e2e8f0"></i>'}</td>
     <td style="padding:6px 8px;font-weight:600">${esc(mes)}</td>
-    <td style="padding:6px 8px;font-size:.8rem">${fats.length?esc(clientes):'<span style="color:var(--text-muted)">Nenhuma paga</span>'}</td>
+    <td style="padding:6px 8px;font-size:.8rem">${aplicado?`<span style="color:var(--success);font-weight:600">${esc(aplicadoEm)}</span>`:(fats.length?esc(clientes):'<span style="color:var(--text-muted)">—</span>')}</td>
     <td style="padding:6px 8px;text-align:right;font-weight:600">${fmt(DB.ajudaCustoVeiculo)}</td>
-    <td style="padding:6px 8px;text-align:center">${solicitado?`<span style="background:var(--success-bg);color:var(--success-text);padding:2px 8px;border-radius:4px;font-size:.75rem;font-weight:600">Solicitado${dataSol?' '+dataSol:''}</span>`:'<span style="color:var(--warning);font-size:.8rem">Pendente</span>'}</td></tr>`;
+    <td style="padding:6px 8px;text-align:center">${aplicado?`<span style="background:var(--success-bg);color:var(--success-text);padding:2px 8px;border-radius:4px;font-size:.75rem;font-weight:600">Aplicado em ${esc(aplicadoEm)}</span>`:'<span style="color:var(--warning);font-size:.8rem">Não aplicado</span>'}</td></tr>`;
   });
 
   // Current month check
   const now=new Date();const mesesN=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const mesAtual=mesesN[now.getMonth()]+' '+now.getFullYear();
-  const jaTemAtual=log.find(l=>l.mes===mesAtual)?.solicitado;
+  const jaTemAtual=DB.faturamento.some(x=>x.mesRef===mesAtual&&x.ajudaCusto);
 
   h+=`</table>`;
   if(!jaTemAtual){h+=`<div style="background:var(--warning-bg);border-radius:8px;padding:10px;margin-top:12px;color:var(--warning-text);font-size:.85rem"><i class="fa-solid fa-triangle-exclamation"></i> <strong>${mesAtual}</strong> — ajuda de custo ainda não solicitada.</div>`;}
